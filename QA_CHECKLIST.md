@@ -1,0 +1,27 @@
+# DriftGuard AI QA Checklist
+
+- [ ] Backend starts
+- [ ] Frontend starts
+- [ ] Signup works
+- [ ] Login works
+- [ ] Workspace works
+- [ ] Dataset evaluation works
+- [ ] RAG search works
+- [ ] Agent workflow works
+- [ ] Monitoring works
+- [ ] Audit works
+- [ ] Docker compose works
+- [ ] pytest passes
+- [ ] frontend tests pass
+- [ ] npm run build passes
+- [ ] observability summary loads
+- [ ] slow endpoints display
+- [ ] errors display
+- [ ] CI passes
+- [ ] weak password is rejected
+- [ ] account lockout works after repeated failed login
+- [ ] session list and revoke works
+- [ ] security summary loads
+- [ ] privacy settings load and save
+- [ ] workspace export downloads JSON
+- [ ] workspace delete request workflow works

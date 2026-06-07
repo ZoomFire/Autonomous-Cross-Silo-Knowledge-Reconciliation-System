@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+storage/driftguard.db
+storage/backups/
+.pytest_cache/
+.git/
+.DS_Store
+.env

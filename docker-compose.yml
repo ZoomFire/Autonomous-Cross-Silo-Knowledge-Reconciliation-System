@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    container_name: driftguard-backend
+    ports:
+      - "${BACKEND_PORT:-8001}:8001"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - driftguard_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: driftguard-frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  driftguard_storage:
+
