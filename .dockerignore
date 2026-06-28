@@ -1,0 +1,15 @@
+.git/
+.github/
+.pytest_cache/
+.venv/
+.venv-1/
+frontend/node_modules/
+frontend/dist/
+backend/.env
+backend/.pytest_cache/
+backend/__pycache__/
+backend/storage/
+storage/
+full.csv
+*.pyc
+*.log

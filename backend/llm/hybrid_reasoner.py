@@ -5,6 +5,7 @@ from database.repositories import HybridAnalysisRepository, ReasoningTraceReposi
 from logger import logger
 
 from .gemini_provider import GeminiProvider
+from .grok_provider import GrokProvider
 from .local_provider import LocalRuleBasedProvider
 from .ollama_provider import OllamaProvider
 from .openai_provider import OpenAIProvider
@@ -16,6 +17,7 @@ PROVIDERS = {
     "local": LocalRuleBasedProvider,
     "openai": OpenAIProvider,
     "gemini": GeminiProvider,
+    "grok": GrokProvider,
     "ollama": OllamaProvider,
     "custom": OpenAIProvider,
 }

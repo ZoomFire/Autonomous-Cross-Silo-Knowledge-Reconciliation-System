@@ -1,6 +1,11 @@
 import os
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - fallback for minimal local environments
+    load_dotenv = None
+
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -8,6 +13,9 @@ BASE_DIR = Path(__file__).resolve().parent
 def _load_dotenv() -> None:
     env_path = BASE_DIR / ".env"
     if not env_path.exists():
+        return
+    if load_dotenv:
+        load_dotenv(env_path)
         return
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -38,6 +46,14 @@ def _list(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _unique(items: list[str]) -> list[str]:
+    result = []
+    for item in items:
+        if item and item not in result:
+            result.append(item)
+    return result
+
+
 _load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "DriftGuard AI")
@@ -47,7 +63,13 @@ APP_PORT = _int("APP_PORT", 8001)
 USE_DATABASE = _bool("USE_DATABASE", True)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./storage/driftguard.db")
 STORAGE_DIR = BASE_DIR / "storage"
-CORS_ORIGINS = _list("CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"])
+FRONTEND_URL = os.getenv("FRONTEND_URL", "").strip()
+CORS_ORIGINS = _unique([
+    "http://localhost:5173",
+    "http://localhost:3000",
+    FRONTEND_URL,
+    *_list("CORS_ORIGINS", []),
+])
 SESSION_EXPIRE_HOURS = _int("SESSION_EXPIRE_HOURS", 24)
 MAX_UPLOAD_SIZE_MB = _int("MAX_UPLOAD_SIZE_MB", 25)
 ENABLE_OPTIONAL_LLM = _bool("ENABLE_OPTIONAL_LLM", False)

@@ -24,6 +24,7 @@ coverage/
 *.db
 *.sqlite
 *.sqlite3
+full.csv
 backend/storage/
 
 # OS / editor

@@ -1375,6 +1375,85 @@ Notes:
 - Baseline and ablation outputs are best-effort when ML/hybrid modules are unavailable.
 - No paid APIs or external keys are required.
 
+## Production Deployment: Vercel + Render
+
+The application is deployment-ready as a split frontend/backend service. The frontend reads the backend URL from `VITE_API_BASE_URL`. The backend reads the deployed frontend origin from `FRONTEND_URL` and the database connection from `DATABASE_URL`.
+
+### Backend on Render
+
+Create a new Render Web Service with these settings:
+
+- Root Directory: `backend`
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+
+Set these Render environment variables:
+
+```text
+FRONTEND_URL=https://your-vercel-frontend-url.vercel.app
+DATABASE_URL=your_database_url
+XAI_API_KEY=your_api_key_here
+```
+
+For local backend development, `DATABASE_URL` can stay as SQLite, for example:
+
+```text
+DATABASE_URL=sqlite:///./silo_project.db
+```
+
+For Render PostgreSQL, use the PostgreSQL connection string supplied by Render. The backend falls back to local SQLite when `DATABASE_URL` is not provided.
+
+Health checks:
+
+- `GET /`
+- `GET /health`
+
+Both return:
+
+```json
+{
+  "status": "ok",
+  "message": "Silo Project Backend is running"
+}
+```
+
+`GET /health` also includes service metadata for diagnostics.
+
+### Frontend on Vercel
+
+Create a new Vercel project with these settings:
+
+- Root Directory: `frontend`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+
+Set this Vercel environment variable:
+
+```text
+VITE_API_BASE_URL=https://your-render-backend-url.onrender.com
+```
+
+After deployment, update the Render `FRONTEND_URL` value to the final Vercel URL so browser requests pass CORS.
+
+### Local Deployment Checks
+
+Backend:
+
+```powershell
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm install
+npm run build
+npm run dev
+```
+
 ## Future Levels
 
 - LLM-assisted claim extraction and reconciliation

@@ -359,11 +359,20 @@ def on_startup():
     logger.info("Startup complete for %s in %s mode. database=%s storage=%s", APP_NAME, APP_ENV, USE_DATABASE, STORAGE_DIR)
 
 
+def _health_message() -> dict:
+    return {"status": "ok", "message": "Silo Project Backend is running"}
+
+
+@app.get("/")
+def root():
+    return _health_message()
+
+
 @app.get("/health")
 def health():
     storage_available = STORAGE_DIR.exists() and STORAGE_DIR.is_dir()
     return {
-        "status": "healthy" if storage_available else "degraded",
+        **_health_message(),
         "app_name": APP_NAME,
         "service": "DriftGuard AI Level 4.7 Backend",
         "environment": APP_ENV,
@@ -1107,6 +1116,17 @@ def delete_llm_prompt(template_id: str, user: dict = Depends(require_auth)):
     return {"status": "ok", "message": "Prompt template deleted successfully."}
 
 
+LLM_SOURCE_FIELDS = ("documentation", "code", "jira", "commit", "logs", "database_config")
+
+
+def _llm_input_context(payload: dict) -> dict:
+    context = dict(payload.get("input_context") or {})
+    for field in LLM_SOURCE_FIELDS:
+        if field in payload:
+            context[field] = payload.get(field, "")
+    return context
+
+
 @app.post("/llm/reason")
 def run_llm_reasoning(payload: dict, user: dict = Depends(require_auth)):
     workspace_id = payload.get("workspace_id", "")
@@ -1116,11 +1136,14 @@ def run_llm_reasoning(payload: dict, user: dict = Depends(require_auth)):
         raise HTTPException(status_code=403, detail="Viewer role can only run read-only RAG answer reasoning.")
     if user.get("role") not in {"admin", "engineer", "reviewer", "viewer"}:
         raise HTTPException(status_code=403, detail="Permission denied for this action.")
+    input_context = _llm_input_context(payload)
+    if payload.get("provider") == "grok" and not any(str(input_context.get(field, "")).strip() for field in LLM_SOURCE_FIELDS):
+        raise HTTPException(status_code=400, detail="Add at least one source field before running Grok reasoning.")
     result = run_hybrid_reasoning(
         workspace_id=workspace_id,
         user_id=user.get("user_id", ""),
         task_type=task_type,
-        input_context=payload.get("input_context", {}),
+        input_context=input_context,
         reasoning_mode=payload.get("reasoning_mode", "local_only"),
         provider=payload.get("provider", "local"),
         runtime_api_key=payload.get("runtime_api_key", ""),

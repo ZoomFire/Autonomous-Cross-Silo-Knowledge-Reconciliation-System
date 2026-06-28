@@ -1,6 +1,4 @@
-const API_BASE_URLS = import.meta.env.VITE_API_BASE_URL
-  ? [import.meta.env.VITE_API_BASE_URL]
-  : ["http://127.0.0.1:8001"];
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
 const TOKEN_KEY = "driftguard_token";
 const WORKSPACE_KEY = "driftguard_workspace_id";
@@ -63,34 +61,24 @@ async function request(path, options = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
-  let lastError = null;
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+    });
 
-  for (const baseUrl of API_BASE_URLS) {
-    try {
-      const response = await fetch(`${baseUrl}${path}`, {
-        ...options,
-        headers,
-      });
-
-      if (response.ok) {
-        return response.json();
-      }
-
-      const message = await errorMessageFromResponse(response, `Request failed with status ${response.status}`);
-      lastError = new Error(message);
-      if (response.status !== 404 || API_BASE_URLS.length === 1) {
-        lastError.noRetry = true;
-        throw lastError;
-      }
-    } catch (err) {
-      if (err.noRetry) {
-        throw err;
-      }
-      lastError = new Error(networkErrorMessage(err));
+    if (response.ok) {
+      return response.json();
     }
-  }
 
-  throw lastError || new Error("Request failed.");
+    const message = await errorMessageFromResponse(response, `Request failed with status ${response.status}`);
+    throw new Error(message);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error(networkErrorMessage(err));
+    }
+    throw err;
+  }
 }
 
 export function analyzeDrift(payload) {
@@ -207,39 +195,29 @@ export function deleteFeedback(feedbackId) {
 
 async function downloadReport(path, filename) {
   const token = getAuthToken();
-  let lastError = null;
-
-  for (const baseUrl of API_BASE_URLS) {
-    try {
-      const response = await fetch(`${baseUrl}${path}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
-
-      const message = await errorMessageFromResponse(response, "Please run an evaluation first.");
-      lastError = new Error(message);
-      if (response.status !== 404 || API_BASE_URLS.length === 1) {
-        lastError.noRetry = true;
-        throw lastError;
-      }
-    } catch (err) {
-      if (err.noRetry) {
-        throw err;
-      }
-      lastError = new Error(networkErrorMessage(err));
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (response.ok) {
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
     }
-  }
 
-  throw lastError || new Error("Please run an evaluation first.");
+    const message = await errorMessageFromResponse(response, "Please run an evaluation first.");
+    throw new Error(message);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error(networkErrorMessage(err));
+    }
+    throw err;
+  }
 }
 
 export function exportLatestEvaluationJson() {
