@@ -1403,6 +1403,14 @@ DATABASE_URL=sqlite:///./silo_project.db
 
 For Render PostgreSQL, use the PostgreSQL connection string supplied by Render. The backend falls back to local SQLite when `DATABASE_URL` is not provided.
 
+If Render logs show an error like:
+
+```text
+psycopg2.OperationalError: could not translate host name "dpg-...-a" to address
+```
+
+the backend cannot resolve the database host in `DATABASE_URL`. In Render, either connect the web service and database in the same region/private network and use the Internal Database URL, or use the External Database URL from the Render PostgreSQL dashboard. After updating `DATABASE_URL`, redeploy the backend service.
+
 Health checks:
 
 - `GET /`

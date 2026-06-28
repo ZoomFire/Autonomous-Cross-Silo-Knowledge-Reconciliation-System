@@ -88,6 +88,7 @@ Store backups outside the Docker volume.
 - Missing `backend/.env`: copy from `backend/.env.example`.
 - Port already in use: change `BACKEND_PORT` or `FRONTEND_PORT` in root `.env`.
 - Frontend cannot reach backend: check `VITE_API_BASE_URL` and backend CORS origins.
+- Render PostgreSQL DNS error such as `could not translate host name "dpg-...-a"`: update `DATABASE_URL` to a Render database URL that the web service can resolve. Use the Internal Database URL only when the backend service and database are in the same Render region/private network; otherwise use the External Database URL.
 - Database permission errors: inspect the Docker volume and container user permissions.
 
 ## Troubleshooting
@@ -124,4 +125,3 @@ curl http://localhost:8001/system/ready
 - Enable HTTPS.
 - Configure log collection and backups.
 - Rotate secrets and session settings regularly.
-

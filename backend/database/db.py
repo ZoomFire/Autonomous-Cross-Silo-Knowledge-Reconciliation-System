@@ -7,12 +7,20 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from config import DATABASE_URL, STORAGE_DIR
 
 
+def _normalize_database_url(database_url: str) -> str:
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql://", 1)
+    return database_url
+
+
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 DATABASE_PATH = STORAGE_DIR / "driftguard.db"
+SQLALCHEMY_DATABASE_URL = _normalize_database_url(DATABASE_URL)
 
 engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {},
+    pool_pre_ping=not SQLALCHEMY_DATABASE_URL.startswith("sqlite"),
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -30,7 +38,7 @@ def init_database():
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
-    if DATABASE_URL.startswith("sqlite"):
+    if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
         with engine.begin() as connection:
             user_columns = {row[1] for row in connection.execute(text("PRAGMA table_info(users)")).fetchall()}
             for name, sql_type, default in [
