@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
@@ -33,10 +33,8 @@ from config import (
     DATABASE_URL,
     INCIDENT_AUTO_CREATE_ENABLED,
     INCIDENT_AUTO_CREATE_SEVERITIES,
-    LOGIN_RATE_LIMIT_PER_MINUTE,
     MAX_UPLOAD_SIZE_MB,
     RAG_RATE_LIMIT_PER_MINUTE,
-    SIGNUP_RATE_LIMIT_PER_MINUTE,
     STORAGE_DIR,
     UPLOAD_RATE_LIMIT_PER_HOUR,
     USE_DATABASE,
@@ -117,21 +115,7 @@ from validation.validation_runner import run_demo_scenario_validation, run_full_
 from llm.hybrid_reasoner import reasoning_trace_to_markdown, run_hybrid_reasoning
 from llm.prompt_manager import create_prompt_template, ensure_default_prompt_templates, list_prompt_templates, update_prompt_template
 from logger import logger
-from auth_store import (
-    authenticate_user,
-    create_session,
-    create_user,
-    delete_user,
-    ensure_auth_dirs,
-    get_current_user,
-    get_user,
-    has_users,
-    list_user_sessions,
-    list_users,
-    logout_session,
-    PASSWORD_POLICY_MESSAGE,
-    update_user_role,
-)
+from auth_store import get_user, list_user_sessions, list_users
 from claim_extractor import build_truth_triangle, extract_claims, extract_entity
 from connector_store import (
     create_connector,
@@ -243,6 +227,12 @@ INVALID_DATASET_MESSAGE = (
     "Invalid dataset format. Each case must include case_id, title, documentation, code, jira, "
     "commit, logs, database_config, expected_label, expected_drift_type, expected_severity."
 )
+SNLI_JSONL_PREVIEW_LIMIT = 100
+SNLI_LABEL_MAP = {
+    "contradiction": "contradiction",
+    "entailment": "no_drift",
+    "neutral": "manual_review",
+}
 
 
 async def _read_upload_limited(file: UploadFile) -> bytes:
@@ -273,11 +263,7 @@ async def add_security_headers(request, call_next):
 
 
 def _request_user_id(request: Request) -> str:
-    authorization = request.headers.get("Authorization", "")
-    if not authorization.lower().startswith("bearer "):
-        return "anonymous"
-    user = get_current_user(authorization.split(" ", 1)[1].strip())
-    return user.get("user_id", "anonymous") if user else "anonymous"
+    return "public-user"
 
 
 @app.middleware("http")
@@ -347,7 +333,6 @@ async def generic_exception_handler(request: Request, exc: Exception):
 def on_startup():
     init_db()
     ensure_audit_dir()
-    ensure_auth_dirs()
     ensure_workspace_dir()
     ensure_storage_dirs()
     ensure_monitoring_dirs()
@@ -379,13 +364,12 @@ def health():
         "database_enabled": USE_DATABASE,
         "storage_available": storage_available,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "has_users": has_users(),
     }
 
 
 @app.get("/system/ready")
 def system_ready():
-    checks = {"database": "unknown", "storage": "unknown", "auth": "ok"}
+    checks = {"database": "unknown", "storage": "unknown"}
     try:
         table_counts()
         checks["database"] = "ok"
@@ -394,24 +378,6 @@ def system_ready():
         logger.error("Readiness database check failed: %s", exc)
     checks["storage"] = "ok" if STORAGE_DIR.exists() and STORAGE_DIR.is_dir() else "missing"
     return {"ready": all(value == "ok" for value in checks.values()), "checks": checks}
-
-
-def _token_from_authorization(authorization: str | None) -> str:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        return ""
-    return authorization.split(" ", 1)[1].strip()
-
-
-def _optional_current_user(authorization: str | None) -> dict | None:
-    token = _token_from_authorization(authorization)
-    return get_current_user(token) if token else None
-
-
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def _require_workspace_scope(user: dict, workspace_id: str):
@@ -423,120 +389,56 @@ def _assert_item_workspace(item: dict, workspace_id: str):
         raise HTTPException(status_code=404, detail="Item not found in this workspace.")
 
 
+AUTH_REMOVED_MESSAGE = "Authentication has been removed. The app runs without login."
+
+
+def _auth_removed():
+    raise HTTPException(status_code=410, detail=AUTH_REMOVED_MESSAGE)
+
+
 @app.post("/auth/signup")
-def signup(payload: dict, request: Request, authorization: str | None = Header(default=None)):
-    check_rate_limit(f"signup:{_client_ip(request)}", SIGNUP_RATE_LIMIT_PER_MINUTE, 60)
-    requested_role = payload.get("role", "viewer")
-    actor = None
-    if not has_users():
-        requested_role = "admin"
-    else:
-        actor = _optional_current_user(authorization)
-        if not actor:
-            raise HTTPException(status_code=401, detail="Only an admin can create more users.")
-        check_permission(actor, "manage_users")
-    try:
-        created = create_user(payload.get("name", ""), payload.get("email", ""), payload.get("password", ""), requested_role)
-        log_audit_event(
-            "signup" if actor is None else "create_user",
-            "user",
-            created["user_id"],
-            created["email"],
-            "success",
-            "Low",
-            f"User account created for {created['email']}.",
-            user=actor or created,
-            metadata={"created_role": created["role"]},
-        )
-        return created
-    except ValueError as exc:
-        if str(exc) == PASSWORD_POLICY_MESSAGE:
-            log_audit_event("weak_password_rejected", "auth", resource_name=payload.get("email", ""), status="denied", severity="Medium", message=str(exc), user=actor)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+def signup():
+    _auth_removed()
 
 
 @app.post("/auth/login")
-def login(payload: dict, request: Request):
-    email = payload.get("email", "")
-    check_rate_limit(f"login:{_client_ip(request)}:{email.strip().lower()}", LOGIN_RATE_LIMIT_PER_MINUTE, 60)
-    user = authenticate_user(payload.get("email", ""), payload.get("password", ""))
-    if user and user.get("locked"):
-        log_audit_event("account_locked", "auth", user.get("user_id", ""), user.get("email", ""), "denied", "High", "Account temporarily locked due to too many failed login attempts.", user=user)
-        raise HTTPException(status_code=403, detail="Account temporarily locked due to too many failed login attempts.")
-    if not user:
-        candidate = next((item for item in list_users(include_private=True) if item.get("email") == email.strip().lower()), None)
-        if candidate and int(candidate.get("failed_login_attempts") or 0) >= 5:
-            log_audit_event("account_locked", "auth", candidate.get("user_id", ""), candidate.get("email", ""), "denied", "High", "Account locked after repeated failed logins.", user=candidate)
-        log_audit_event("failed_login", "auth", resource_name=payload.get("email", ""), status="failed", severity="High", message="Login failed due to invalid credentials.", metadata={"email": payload.get("email", "")})
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
-    session = create_session(user["user_id"])
-    log_audit_event("login", "auth", user["user_id"], user["email"], "success", "Info", "User logged in successfully.", user=user)
-    log_audit_event("session_created", "auth", user["user_id"], user["email"], "success", "Info", "User session created.", user=user)
-    return {"token": session["token"], "user": user}
+def login():
+    _auth_removed()
 
 
 @app.post("/auth/logout")
-def logout(authorization: str | None = Header(default=None)):
-    token = _token_from_authorization(authorization)
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authentication token.")
-    user = get_current_user(token)
-    logout_session(token)
-    log_audit_event("logout", "auth", status="success", severity="Info", message="User logged out.", user=user)
-    return {"status": "ok", "message": "Logged out successfully."}
+def logout():
+    _auth_removed()
 
 
 @app.get("/auth/sessions")
-def auth_sessions(user: dict = Depends(require_auth)):
-    return list_user_sessions(user["user_id"])
+def auth_sessions():
+    _auth_removed()
 
 
 @app.delete("/auth/sessions/{session_id}")
-def auth_revoke_session(session_id: str, user: dict = Depends(require_auth)):
-    sessions = list_user_sessions(user["user_id"])
-    if not any(item.get("session_id") == session_id for item in sessions):
-        raise HTTPException(status_code=404, detail="Session not found.")
-    if not logout_session(session_id):
-        raise HTTPException(status_code=404, detail="Session not found.")
-    log_audit_event("session_revoked", "auth", user["user_id"], user.get("email", ""), "success", "Medium", "User revoked a session.", user=user)
-    return {"status": "ok", "message": "Session revoked successfully."}
+def auth_revoke_session(session_id: str):
+    _auth_removed()
 
 
 @app.get("/auth/me")
-def auth_me(user: dict = Depends(require_auth)):
-    return user
+def auth_me():
+    _auth_removed()
 
 
 @app.get("/auth/users")
-def auth_users(user: dict = Depends(require_auth)):
-    check_permission(user, "manage_users")
-    return list_users()
+def auth_users():
+    _auth_removed()
 
 
 @app.put("/auth/users/{user_id}/role")
-def auth_update_user_role(user_id: str, payload: dict, user: dict = Depends(require_auth)):
-    check_permission(user, "manage_users")
-    try:
-        updated = update_user_role(user_id, payload.get("role", ""))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not updated:
-        raise HTTPException(status_code=404, detail="User not found.")
-    log_audit_event("update_user_role", "user", user_id, updated.get("email", ""), "success", "Medium", f"User role updated to {updated.get('role')}.", user=user)
-    return updated
+def auth_update_user_role(user_id: str):
+    _auth_removed()
 
 
 @app.delete("/auth/users/{user_id}")
-def auth_delete_user(user_id: str, user: dict = Depends(require_auth)):
-    check_permission(user, "manage_users")
-    try:
-        deleted = delete_user(user_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not deleted:
-        raise HTTPException(status_code=404, detail="User not found.")
-    log_audit_event("delete_user", "user", user_id, user_id, "success", "Critical", "User account deleted.", user=user)
-    return {"status": "ok", "message": "User deleted successfully."}
+def auth_delete_user(user_id: str):
+    _auth_removed()
 
 
 @app.post("/workspaces")
@@ -1031,18 +933,28 @@ def save_llm_settings(payload: dict, user: dict = Depends(require_auth)):
     workspace_id = payload.get("workspace_id", "")
     workspace = _require_workspace_scope(user, workspace_id)
     now = utc_now()
-    settings = LLMSettingsRepository.create({
-        "settings_id": str(uuid4()),
+    provider = payload.get("provider", "local")
+    existing = LLMSettingsRepository.get_by_workspace_provider(workspace_id, provider)
+    settings_payload = {
         "workspace_id": workspace_id,
-        "provider": payload.get("provider", "local"),
+        "provider": provider,
         "model_name": payload.get("model_name", "local-rule-engine"),
         "reasoning_mode": payload.get("reasoning_mode", "local_only"),
         "api_key_masked": _mask_runtime_key(payload.get("runtime_api_key", "")) or payload.get("api_key_masked", ""),
         "config": payload.get("config", {}),
         "enabled": payload.get("enabled", True),
-        "created_at": now,
         "updated_at": now,
-    })
+    }
+    if existing:
+        if not settings_payload["api_key_masked"]:
+            settings_payload["api_key_masked"] = existing.get("api_key_masked", "")
+        settings = LLMSettingsRepository.update(existing["settings_id"], settings_payload)
+    else:
+        settings = LLMSettingsRepository.create({
+            **settings_payload,
+            "settings_id": str(uuid4()),
+            "created_at": now,
+        })
     log_audit_event("llm_settings_updated", "llm_settings", settings["settings_id"], settings["provider"], "success", "Medium", "User saved LLM settings.", user=user, workspace=workspace, metadata={"reasoning_mode": settings["reasoning_mode"]})
     return settings
 
@@ -1320,16 +1232,25 @@ def database_integrity(user: dict = Depends(require_auth)):
 
 async def _parse_uploaded_dataset(file: UploadFile) -> list[DatasetCase]:
     filename = file.filename or ""
-    if not filename.lower().endswith(".json"):
-        raise HTTPException(status_code=400, detail="Only JSON dataset files are supported in Level 2.1.")
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".jsonl"}:
+        raise HTTPException(status_code=400, detail="Only JSON or SNLI JSONL dataset files are supported.")
 
     try:
         raw_content = await _read_upload_limited(file)
-        parsed_json = json.loads(raw_content.decode("utf-8-sig"))
+        decoded_content = raw_content.decode("utf-8-sig")
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="Invalid dataset format. Please upload a JSON array of dataset cases.") from exc
     except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Only JSON dataset files are supported in Level 2.1.") from exc
+        raise HTTPException(status_code=400, detail="Uploaded dataset must be valid UTF-8 JSON or JSONL.") from exc
+
+    if suffix == ".jsonl":
+        return _parse_snli_jsonl_dataset(decoded_content)
+
+    try:
+        parsed_json = json.loads(decoded_content)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid dataset format. Please upload a JSON array of dataset cases.") from exc
 
     if not isinstance(parsed_json, list):
         raise HTTPException(status_code=400, detail="Dataset JSON must be a list of dataset cases.")
@@ -1340,6 +1261,51 @@ async def _parse_uploaded_dataset(file: UploadFile) -> list[DatasetCase]:
         return [DatasetCase(**case) for case in parsed_json]
     except (TypeError, ValidationError) as exc:
         raise HTTPException(status_code=400, detail=INVALID_DATASET_MESSAGE) from exc
+
+
+def _parse_snli_jsonl_dataset(content: str) -> list[DatasetCase]:
+    cases: list[DatasetCase] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Uploaded dataset is not valid JSONL. Line {line_number} is invalid JSON.") from exc
+        if not isinstance(record, dict):
+            raise HTTPException(status_code=400, detail=f"Uploaded dataset is not valid JSONL. Line {line_number} must be a JSON object.")
+
+        gold_label = str(record.get("gold_label", "")).strip().lower()
+        if not gold_label or gold_label == "-":
+            continue
+        expected_label = SNLI_LABEL_MAP.get(gold_label)
+        if expected_label is None:
+            continue
+
+        sentence1 = str(record.get("sentence1", "")).strip()
+        sentence2 = str(record.get("sentence2", "")).strip()
+        if not sentence1 or not sentence2:
+            continue
+
+        cases.append(DatasetCase(
+            case_id=f"SNLI-{len(cases) + 1:03d}",
+            title="SNLI natural language inference case",
+            documentation=sentence1,
+            code=sentence2,
+            jira=sentence2,
+            commit="",
+            logs="",
+            database_config="",
+            expected_label=expected_label,
+            expected_drift_type="No Drift" if expected_label == "no_drift" else "Logical Contradiction",
+            expected_severity="None" if expected_label == "no_drift" else "Low",
+        ))
+        if len(cases) >= SNLI_JSONL_PREVIEW_LIMIT:
+            break
+
+    if not cases:
+        raise HTTPException(status_code=400, detail="SNLI JSONL must include at least one valid record with sentence1, sentence2, and gold_label.")
+    return cases
 
 
 CONNECTOR_TYPES = {"github", "jira", "confluence", "logs", "config", "manual_upload"}

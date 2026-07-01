@@ -1,19 +1,6 @@
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001").replace(/\/$/, "");
 
-const TOKEN_KEY = "driftguard_token";
 const WORKSPACE_KEY = "driftguard_workspace_id";
-
-export function setAuthToken(token) {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function getAuthToken() {
-  return localStorage.getItem(TOKEN_KEY) || "";
-}
-
-export function clearAuthToken() {
-  localStorage.removeItem(TOKEN_KEY);
-}
 
 export function setSelectedWorkspaceId(workspaceId) {
   localStorage.setItem(WORKSPACE_KEY, workspaceId || "");
@@ -32,18 +19,17 @@ function withWorkspace(path) {
 }
 
 async function errorMessageFromResponse(response, fallback) {
-  if (response.status === 401) return "Session expired or unauthorized. Please log in again.";
-  if (response.status === 403) return "Permission denied for this action.";
   try {
     const errorBody = await response.json();
     if (errorBody.message) return errorBody.message;
     if (errorBody.details?.message) return errorBody.details.message;
     if (typeof errorBody.detail === "string") return errorBody.detail;
     if (errorBody.detail?.message) return errorBody.detail.message;
-    return fallback;
   } catch {
-    return fallback;
   }
+  if (response.status === 401) return "Request unauthorized.";
+  if (response.status === 403) return "Permission denied for this action.";
+  return fallback;
 }
 
 function networkErrorMessage(error) {
@@ -55,15 +41,14 @@ function networkErrorMessage(error) {
 
 async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;
-  const token = getAuthToken();
   const headers = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
+  const fetchOptions = { ...options };
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers,
     });
 
@@ -72,7 +57,9 @@ async function request(path, options = {}) {
     }
 
     const message = await errorMessageFromResponse(response, `Request failed with status ${response.status}`);
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   } catch (err) {
     if (err instanceof TypeError) {
       throw new Error(networkErrorMessage(err));
@@ -194,10 +181,8 @@ export function deleteFeedback(feedbackId) {
 }
 
 async function downloadReport(path, filename) {
-  const token = getAuthToken();
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (response.ok) {
       const blob = await response.blob();
@@ -338,44 +323,6 @@ export function exportMonitoringAlertsJson() {
 
 export function exportMonitoringAlertsMarkdown() {
   return downloadReport(withWorkspace("/monitoring/alerts/export-markdown"), "driftguard-monitoring-alerts.md");
-}
-
-export function signup(data) {
-  return request("/auth/signup", { method: "POST", body: JSON.stringify(data) });
-}
-
-export async function login(data) {
-  const response = await request("/auth/login", { method: "POST", body: JSON.stringify(data) });
-  setAuthToken(response.token);
-  return response;
-}
-
-export function logout() {
-  return request("/auth/logout", { method: "POST" }).finally(clearAuthToken);
-}
-
-export function getCurrentUser() {
-  return request("/auth/me");
-}
-
-export function getActiveSessions() {
-  return request("/auth/sessions");
-}
-
-export function revokeSession(sessionId) {
-  return request(`/auth/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-}
-
-export function getUsers() {
-  return request("/auth/users");
-}
-
-export function updateUserRole(userId, role) {
-  return request(`/auth/users/${userId}/role`, { method: "PUT", body: JSON.stringify({ role }) });
-}
-
-export function deleteUser(userId) {
-  return request(`/auth/users/${userId}`, { method: "DELETE" });
 }
 
 export function createWorkspace(data) {

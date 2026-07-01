@@ -1,18 +1,23 @@
-def test_signup_endpoint_exists(client):
-    response = client.post("/auth/signup", json={})
+def test_auth_endpoints_are_disabled(client):
+    for method, path in [
+        ("post", "/auth/signup"),
+        ("post", "/auth/login"),
+        ("post", "/auth/logout"),
+        ("get", "/auth/me"),
+        ("get", "/auth/sessions"),
+        ("get", "/auth/users"),
+    ]:
+        if method == "post":
+            response = client.post(path, json={})
+        else:
+            response = client.get(path)
 
-    assert response.status_code in {400, 401, 422}
+        assert response.status_code == 410
+        assert "Authentication has been removed" in response.json()["message"]
 
 
-def test_login_endpoint_exists(client):
-    response = client.post("/auth/login", json={})
+def test_workspace_api_works_without_authorization_header(client):
+    response = client.get("/workspaces")
 
-    assert response.status_code == 401
-
-
-def test_invalid_login_returns_error_response(client):
-    response = client.post("/auth/login", json={"email": "missing@example.com", "password": "wrong"})
-
-    assert response.status_code == 401
-    body = response.json()
-    assert body.get("error") is True or "detail" in body
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)

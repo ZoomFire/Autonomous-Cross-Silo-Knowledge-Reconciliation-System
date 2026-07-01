@@ -1,15 +1,13 @@
-import { Download, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { Download, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   approveWorkspaceDeleteRequest,
   createWorkspaceDeleteRequest,
   exportWorkspaceData,
-  getActiveSessions,
   getPrivacySettings,
   getSecurityEvents,
   getSecuritySummary,
   getWorkspaceDeleteRequests,
-  revokeSession,
   updatePrivacySettings,
 } from "../api.js";
 
@@ -33,7 +31,6 @@ function formatDate(value) {
 
 export default function SecurityPrivacyDashboard({ user, workspaceId }) {
   const [summary, setSummary] = useState(null);
-  const [sessions, setSessions] = useState([]);
   const [settings, setSettings] = useState(defaultSettings);
   const [deleteRequests, setDeleteRequests] = useState([]);
   const [events, setEvents] = useState([]);
@@ -45,7 +42,6 @@ export default function SecurityPrivacyDashboard({ user, workspaceId }) {
   const cards = useMemo(() => [
     ["Total users", summary?.total_users ?? 0],
     ["Locked accounts", summary?.locked_accounts ?? 0],
-    ["Active sessions", summary?.active_sessions ?? 0],
     ["Failed logins 24h", summary?.failed_logins_24h ?? 0],
     ["Rate limit events 24h", summary?.rate_limit_events_24h ?? 0],
     ["Sensitive data events 24h", summary?.sensitive_data_events_24h ?? 0],
@@ -56,15 +52,13 @@ export default function SecurityPrivacyDashboard({ user, workspaceId }) {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, nextSessions, nextSettings, nextRequests, nextEvents] = await Promise.all([
+      const [nextSummary, nextSettings, nextRequests, nextEvents] = await Promise.all([
         getSecuritySummary(),
-        getActiveSessions(),
         getPrivacySettings(workspaceId),
         getWorkspaceDeleteRequests(),
         getSecurityEvents(),
       ]);
       setSummary(nextSummary);
-      setSessions(nextSessions);
       setSettings({ ...defaultSettings, ...nextSettings });
       setDeleteRequests(nextRequests);
       setEvents(nextEvents);
@@ -108,11 +102,6 @@ export default function SecurityPrivacyDashboard({ user, workspaceId }) {
     await refresh();
   }
 
-  async function revoke(sessionId) {
-    await revokeSession(sessionId);
-    await refresh();
-  }
-
   if (!canAdmin) {
     return <section className="page"><div className="error-banner">Permission denied. Security settings are available only for admins.</div></section>;
   }
@@ -122,7 +111,7 @@ export default function SecurityPrivacyDashboard({ user, workspaceId }) {
       <div className="page-header">
         <div>
           <h2>Security and Privacy Controls</h2>
-          <p>Manage account security, active sessions, sensitive data protection, workspace privacy settings, and data export/delete requests.</p>
+          <p>Manage sensitive data protection, workspace privacy settings, and data export/delete requests.</p>
         </div>
         <button className="secondary-button" onClick={refresh} disabled={loading}><RefreshCw size={16} />Refresh</button>
       </div>
@@ -134,26 +123,6 @@ export default function SecurityPrivacyDashboard({ user, workspaceId }) {
         {cards.map(([label, value]) => <div className="metric-card compact" key={label}><span>{label}</span><strong>{value}</strong></div>)}
         <div className="metric-card compact"><span>Security risk level</span><strong><Badge value={summary?.security_risk_level || "Low"} /></strong></div>
       </div>
-
-      <section className="panel">
-        <div className="section-heading"><h3><ShieldCheck size={18} /> Active Sessions</h3></div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Session</th><th>Created at</th><th>Expires at</th><th>Actions</th></tr></thead>
-            <tbody>
-              {sessions.map((item) => (
-                <tr key={item.session_id}>
-                  <td className="mono-cell">{item.masked_token}</td>
-                  <td>{formatDate(item.created_at)}</td>
-                  <td>{formatDate(item.expires_at)}</td>
-                  <td><button className="secondary-button" onClick={() => revoke(item.session_id)}>Revoke Session</button></td>
-                </tr>
-              ))}
-              {!sessions.length && <tr><td colSpan="4">No active sessions found.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
 
       <section className="panel">
         <div className="section-heading"><h3>Privacy Settings</h3></div>

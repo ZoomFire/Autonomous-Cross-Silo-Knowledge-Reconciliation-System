@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from audit_store import build_compliance_risk_summary
 from database.repositories import (
+    BenchmarkDatasetRepository,
+    BenchmarkExampleRepository,
     DatasetRepository,
     DeployedModelRepository,
     EvaluationRepository,
@@ -37,6 +39,45 @@ def _count_drift_cases(evaluations: list[dict]) -> tuple[int, int, int]:
     return drift_cases, critical, high
 
 
+def _risk_counts_from_benchmark_examples(workspace_id: str) -> tuple[int, int, int, list[dict]]:
+    examples = BenchmarkExampleRepository.list(workspace_id=workspace_id, limit=1000)
+    drift_cases = critical = high = 0
+    by_dataset: dict[str, dict] = {}
+    for example in examples:
+        label = str((example.get("target") or {}).get("label", "")).lower()
+        severity = str((example.get("target") or {}).get("severity", "")).lower()
+        is_review_case = label in {"contradiction", "drift", "manual_review", "uncertain"} or severity in {"critical", "high"}
+        if not is_review_case:
+            continue
+        drift_cases += 1
+        if severity == "critical":
+            critical += 1
+        if severity == "high":
+            high += 1
+        dataset_type = example.get("dataset_type") or "benchmark"
+        row = by_dataset.setdefault(dataset_type, {"component": f"{dataset_type.upper()} benchmark", "risk_score": 0, "case_count": 0, "severity": "Low"})
+        row["case_count"] += 1
+        row["risk_score"] = min(100, row["risk_score"] + (8 if label == "contradiction" else 4))
+    return drift_cases, critical, high, sorted(by_dataset.values(), key=lambda item: item["risk_score"], reverse=True)[:5]
+
+
+def _risk_counts_from_incidents(incidents: list[dict]) -> tuple[int, int, int, list[dict]]:
+    risk_statuses = {"open", "triaged", "in_progress", "escalated"}
+    risky = [item for item in incidents if item.get("status") in risk_statuses]
+    critical = sum(1 for item in risky if item.get("severity") == "Critical")
+    high = sum(1 for item in risky if item.get("severity") == "High")
+    components = [
+        {
+            "component": item.get("title") or "Incident",
+            "risk_score": 90 if item.get("severity") == "Critical" else 70 if item.get("severity") == "High" else 45,
+            "case_count": 1,
+            "severity": item.get("severity", "Medium"),
+        }
+        for item in risky[:5]
+    ]
+    return len(risky), critical, high, components
+
+
 def _average_resolution_hours(incidents: list[dict]) -> float:
     durations = []
     for incident in incidents:
@@ -59,6 +100,7 @@ def _risk_level(score: int) -> str:
 
 def collect_executive_metrics(workspace_id: str) -> dict:
     datasets = DatasetRepository.list(workspace_id)
+    benchmark_datasets = BenchmarkDatasetRepository.list(workspace_id)
     evaluations = EvaluationRepository.list(workspace_id)
     incidents = IncidentRepository.list_by_workspace(workspace_id)
     alerts = list_alerts(workspace_id)
@@ -66,7 +108,12 @@ def collect_executive_metrics(workspace_id: str) -> dict:
     sync_records = ExternalSyncRecordRepository.list_by_workspace(workspace_id, limit=500)
     delivery_logs = NotificationDeliveryRepository.list_by_workspace(workspace_id, limit=500)
     feedback_items = FeedbackRepository.list(workspace_id=workspace_id)
-    drift_cases, critical_cases, high_cases = _count_drift_cases(evaluations)
+    evaluation_drift, evaluation_critical, evaluation_high = _count_drift_cases(evaluations)
+    incident_drift, incident_critical, incident_high, incident_components = _risk_counts_from_incidents(incidents)
+    benchmark_drift, benchmark_critical, benchmark_high, benchmark_components = _risk_counts_from_benchmark_examples(workspace_id)
+    drift_cases = evaluation_drift + incident_drift + benchmark_drift
+    critical_cases = evaluation_critical + incident_critical + benchmark_critical
+    high_cases = evaluation_high + incident_high + benchmark_high
     now = datetime.now(timezone.utc)
     overdue = 0
     for incident in incidents:
@@ -80,7 +127,7 @@ def collect_executive_metrics(workspace_id: str) -> dict:
     review_completion_rate = round((len(review_done) / len(feedback_items)) * 100, 2) if feedback_items else 0
     automation_rate = round((len(sync_success) / max(len(incidents), 1)) * 100, 2) if incidents else 0
     external_success_rate = round((len(sync_success) / len(sync_records)) * 100, 2) if sync_records else 0
-    drift_risk_score = min(100, critical_cases * 20 + high_cases * 10 + overdue * 8 + len([a for a in alerts if a.get("status") == "open"]) * 5)
+    drift_risk_score = min(100, critical_cases * 20 + high_cases * 10 + benchmark_drift // 10 + overdue * 8 + len([a for a in alerts if a.get("status") == "open"]) * 5)
     compliance = build_compliance_risk_summary(workspace_id)
     compliance_score = int(compliance.get("risk_score", 0) or 0)
     model_health_risk = "Low" if deployed_models else "Medium"
@@ -92,9 +139,14 @@ def collect_executive_metrics(workspace_id: str) -> dict:
             "case_count": len(alert.get("related_cases", [])),
             "severity": alert.get("severity", "Medium"),
         })
+    top_components.extend(incident_components)
+    top_components.extend(benchmark_components)
+    top_components = sorted(top_components, key=lambda item: item.get("risk_score", 0), reverse=True)[:5]
     recommendations = []
     if critical_cases:
         recommendations.append("Prioritize critical drift cases and assign executive-visible owners.")
+    if benchmark_drift and not evaluation_drift:
+        recommendations.append("Run a DriftGuard evaluation on imported benchmark examples to turn risk signals into validated findings.")
     if overdue:
         recommendations.append("Reduce overdue incidents by reviewing SLA ownership and escalation rules.")
     if failed_syncs:
@@ -106,9 +158,14 @@ def collect_executive_metrics(workspace_id: str) -> dict:
     return {
         "workspace_id": workspace_id,
         "summary": {
-            "datasets": len(datasets),
+            "datasets": len(datasets) + len(benchmark_datasets),
+            "saved_datasets": len(datasets),
+            "benchmark_datasets": len(benchmark_datasets),
             "evaluations": len(evaluations),
             "drift_cases": drift_cases,
+            "evaluation_drift_cases": evaluation_drift,
+            "benchmark_risk_cases": benchmark_drift,
+            "incident_risk_cases": incident_drift,
             "critical_drift_cases": critical_cases,
             "high_drift_cases": high_cases,
             "incidents": len(incidents),

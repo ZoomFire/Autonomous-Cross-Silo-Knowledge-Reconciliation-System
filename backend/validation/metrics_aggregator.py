@@ -5,7 +5,7 @@ from executive.metrics_collector import collect_executive_metrics
 def aggregate_validation_metrics(validation_outputs: dict) -> dict:
     evaluation = validation_outputs.get("evaluation", {}) or {}
     result = evaluation.get("result", {}) or {}
-    cases = result.get("cases", [])
+    cases = result.get("results", result.get("cases", []))
     severity_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
     drift_cases = 0
     for case in cases:

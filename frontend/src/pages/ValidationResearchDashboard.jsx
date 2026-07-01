@@ -33,6 +33,10 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString() : "Unknown";
 }
 
+function formatMoney(value) {
+  return `₹${Number(value || 0).toLocaleString("en-IN")}`;
+}
+
 function Bars({ chart }) {
   const max = Math.max(...(chart?.values || [1]), 1);
   return (
@@ -60,6 +64,7 @@ export default function ValidationResearchDashboard({ user, workspaceId }) {
   const [form, setForm] = useState({ dataset_id: "", name: "Payment Drift Real Dataset Validation", scenario_name: "Payment API Drift Demo" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [action, setAction] = useState("");
   const canRun = ["admin", "engineer", "reviewer"].includes(user?.role);
   const canDelete = user?.role === "admin";
 
@@ -92,54 +97,124 @@ export default function ValidationResearchDashboard({ user, workspaceId }) {
   }, [workspaceId]);
 
   async function checkReadiness() {
-    setReadiness(await getDemoReadiness(workspaceId));
+    try {
+      setAction("readiness");
+      setError("");
+      setReadiness(await getDemoReadiness(workspaceId));
+    } catch (err) {
+      setError(err.message || "Unable to check demo readiness.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function runReal() {
-    const result = await runRealDatasetValidation({ workspace_id: workspaceId, dataset_id: form.dataset_id, name: form.name });
-    setSelected(result);
-    setMessage("Real dataset validation completed.");
-    await refresh();
+    try {
+      setAction("real");
+      setError("");
+      const result = await runRealDatasetValidation({ workspace_id: workspaceId, dataset_id: form.dataset_id, name: form.name });
+      setSelected(result);
+      setMessage("Real dataset validation completed.");
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to run real dataset validation.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function runFull() {
-    const result = await runFullSystemValidation({ workspace_id: workspaceId, name: "Full DriftGuard System Validation" });
-    setSelected(result);
-    setMessage("Full system validation completed.");
-    await refresh();
+    try {
+      setAction("full");
+      setError("");
+      const result = await runFullSystemValidation({ workspace_id: workspaceId, name: "Full DriftGuard System Validation" });
+      setSelected(result);
+      setMessage("Full system validation completed.");
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to run full system validation.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function runDemo() {
-    const result = await runDemoScenarioValidation({ workspace_id: workspaceId, scenario_name: form.scenario_name });
-    setSelected(result);
-    setMessage("Demo scenario validation completed.");
-    await refresh();
+    try {
+      setAction("demo");
+      setError("");
+      const result = await runDemoScenarioValidation({ workspace_id: workspaceId, scenario_name: form.scenario_name });
+      setSelected(result);
+      setMessage("Demo scenario validation completed.");
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to run demo scenario validation.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function viewRun(validationId) {
-    setSelected(await getValidationRun(validationId));
+    try {
+      setError("");
+      setSelected(await getValidationRun(validationId));
+    } catch (err) {
+      setError(err.message || "Unable to load validation run.");
+    }
   }
 
   async function removeRun(validationId) {
     if (!confirm("Delete this validation run?")) return;
-    await deleteValidationRun(validationId);
-    setSelected(null);
-    await refresh();
+    try {
+      setAction(`delete-${validationId}`);
+      setError("");
+      await deleteValidationRun(validationId);
+      setSelected(null);
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to delete validation run.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function makeResearch(validationId) {
-    const result = await generateResearchReport(validationId);
-    setMessage("Research report generated.");
-    await refresh();
-    return result;
+    try {
+      setAction(`research-${validationId}`);
+      setError("");
+      const result = await generateResearchReport(validationId);
+      setMessage("Research report generated.");
+      await refresh();
+      return result;
+    } catch (err) {
+      setError(err.message || "Unable to generate research report.");
+      return null;
+    } finally {
+      setAction("");
+    }
   }
 
   async function compareBaseline() {
-    setBaseline(await runBaselineComparison({ workspace_id: workspaceId, dataset_id: form.dataset_id }));
+    try {
+      setAction("baseline");
+      setError("");
+      setBaseline(await runBaselineComparison({ workspace_id: workspaceId, dataset_id: form.dataset_id }));
+    } catch (err) {
+      setError(err.message || "Unable to run baseline comparison.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function runAblation() {
-    setAblation(await runAblationStudy({ workspace_id: workspaceId, dataset_id: form.dataset_id }));
+    try {
+      setAction("ablation");
+      setError("");
+      setAblation(await runAblationStudy({ workspace_id: workspaceId, dataset_id: form.dataset_id }));
+    } catch (err) {
+      setError(err.message || "Unable to run ablation study.");
+    } finally {
+      setAction("");
+    }
   }
 
   const metrics = selected?.metrics || {};
@@ -158,7 +233,7 @@ export default function ValidationResearchDashboard({ user, workspaceId }) {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="panel">
-        <div className="section-heading"><h3>Demo Readiness</h3><button className="secondary-button" onClick={checkReadiness}>Check Demo Readiness</button></div>
+        <div className="section-heading"><h3>Demo Readiness</h3><button className="secondary-button" onClick={checkReadiness} disabled={action === "readiness"}>Check Demo Readiness</button></div>
         <div className="dashboard-grid">
           <Metric label="Ready" value={readiness?.ready_for_demo ? "Yes" : "No"} />
           <Metric label="Demo score" value={readiness?.score || 0} />
@@ -173,16 +248,16 @@ export default function ValidationResearchDashboard({ user, workspaceId }) {
           <div className="section-heading"><h3><Play size={18} /> Real Dataset Validation</h3></div>
           <label>Dataset<select value={form.dataset_id} onChange={(event) => setForm({ ...form, dataset_id: event.target.value })}>{datasets.map((dataset) => <option key={dataset.dataset_id} value={dataset.dataset_id}>{dataset.name}</option>)}</select></label>
           <label>Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
-          {canRun && <button className="primary-button" disabled={!form.dataset_id} onClick={runReal}>Run Real Dataset Validation</button>}
+          {canRun && <button className="primary-button" disabled={!form.dataset_id || action === "real"} onClick={runReal}>Run Real Dataset Validation</button>}
         </div>
         <div className="panel">
           <div className="section-heading"><h3>Full System Validation</h3></div>
-          {canRun && <button className="primary-button" onClick={runFull}>Run Full System Validation</button>}
+          {canRun && <button className="primary-button" onClick={runFull} disabled={action === "full"}>Run Full System Validation</button>}
         </div>
         <div className="panel incident-form">
           <div className="section-heading"><h3>Demo Scenario Validation</h3></div>
           <label>Scenario<select value={form.scenario_name} onChange={(event) => setForm({ ...form, scenario_name: event.target.value })}>{scenarios.map((scenario) => <option key={scenario.name} value={scenario.name}>{scenario.name}</option>)}</select></label>
-          {canRun && <button className="primary-button" onClick={runDemo}>Run Demo Scenario Validation</button>}
+          {canRun && <button className="primary-button" onClick={runDemo} disabled={action === "demo"}>Run Demo Scenario Validation</button>}
         </div>
       </div>
 
@@ -195,14 +270,14 @@ export default function ValidationResearchDashboard({ user, workspaceId }) {
               {runs.map((run) => (
                 <tr key={run.validation_id}>
                   <td>{run.name}</td><td>{run.validation_type}</td><td><Badge value={run.status} /></td><td>{formatDate(run.started_at)}</td>
-                  <td>{run.summary?.accuracy ?? run.metrics?.evaluation?.accuracy ?? 0}</td><td>{run.summary?.drift_cases ?? run.metrics?.drift?.total_drift_cases ?? 0}</td><td>${run.summary?.estimated_total_value ?? run.metrics?.business?.estimated_total_value ?? 0}</td>
+                  <td>{run.summary?.accuracy ?? run.metrics?.evaluation?.accuracy ?? 0}</td><td>{run.summary?.drift_cases ?? run.metrics?.drift?.total_drift_cases ?? 0}</td><td>{formatMoney(run.summary?.estimated_total_value ?? run.metrics?.business?.estimated_total_value ?? 0)}</td>
                   <td className="button-row">
                     <button className="secondary-button" onClick={() => viewRun(run.validation_id)}>View</button>
-                    {canRun && <button className="secondary-button" onClick={() => makeResearch(run.validation_id)}><FileText size={16} />Research</button>}
+                    {canRun && <button className="secondary-button" onClick={() => makeResearch(run.validation_id)} disabled={action === `research-${run.validation_id}`}><FileText size={16} />Research</button>}
                     <button className="secondary-button" onClick={() => exportValidationResultsJson(run.validation_id)}><Download size={16} />JSON</button>
                     <button className="secondary-button" onClick={() => exportValidationMetricsCsv(run.validation_id)}>CSV</button>
                     <button className="secondary-button" onClick={() => exportResearchReportMarkdown(run.validation_id)}>Markdown</button>
-                    {canDelete && <button className="secondary-button danger" onClick={() => removeRun(run.validation_id)}><Trash2 size={16} />Delete</button>}
+                    {canDelete && <button className="secondary-button danger" onClick={() => removeRun(run.validation_id)} disabled={action === `delete-${run.validation_id}`}><Trash2 size={16} />Delete</button>}
                   </td>
                 </tr>
               ))}
@@ -230,12 +305,12 @@ export default function ValidationResearchDashboard({ user, workspaceId }) {
 
       <div className="incident-layout">
         <div className="panel">
-          <div className="section-heading"><h3>Baseline Comparison</h3><button className="secondary-button" disabled={!form.dataset_id || !canRun} onClick={compareBaseline}>Run Baseline Comparison</button></div>
+          <div className="section-heading"><h3>Baseline Comparison</h3><button className="secondary-button" disabled={!form.dataset_id || !canRun || action === "baseline"} onClick={compareBaseline}>Run Baseline Comparison</button></div>
           {(baseline?.baseline_results || []).map((item) => <div className="agent-log-row" key={item.mode}><span>{item.mode}</span><small>Accuracy {item.accuracy}</small><p>{item.notes}</p></div>)}
           {baseline?.summary && <p className="report-summary">{baseline.summary}</p>}
         </div>
         <div className="panel">
-          <div className="section-heading"><h3>Ablation Study</h3><button className="secondary-button" disabled={!form.dataset_id || !canRun} onClick={runAblation}>Run Ablation Study</button></div>
+          <div className="section-heading"><h3>Ablation Study</h3><button className="secondary-button" disabled={!form.dataset_id || !canRun || action === "ablation"} onClick={runAblation}>Run Ablation Study</button></div>
           {(ablation?.ablation_results || []).map((item) => <div className="agent-log-row" key={item.configuration}><span>{item.configuration}</span><small>Accuracy {item.accuracy}</small><p>{item.notes}</p></div>)}
         </div>
       </div>

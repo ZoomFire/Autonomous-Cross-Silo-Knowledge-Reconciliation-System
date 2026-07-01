@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Bot, Brain, BriefcaseBusiness, ClipboardList, Cpu, DatabaseZap, FileSearch, FlaskConical, Gauge, History, LockKeyhole, Plug, Search, ServerCog, ShieldAlert, ShieldCheck, Users, Workflow } from "lucide-react";
+import { Activity, BarChart3, Bot, Brain, BriefcaseBusiness, ClipboardList, Cpu, DatabaseZap, FileSearch, FlaskConical, Gauge, History, LockKeyhole, Plug, Search, ServerCog, ShieldAlert, ShieldCheck, Workflow } from "lucide-react";
 import PermissionGuard from "./PermissionGuard.jsx";
 
 export default function Sidebar({ activePage, onNavigate, user }) {
@@ -51,7 +51,7 @@ export default function Sidebar({ activePage, onNavigate, user }) {
           <Bot size={18} />
           <span>Agent</span>
         </button>
-        {user?.role !== "viewer" && (
+        {["admin", "engineer", "reviewer"].includes(user?.role) && (
           <button className={activePage === "ai-settings" ? "nav-item active" : "nav-item"} onClick={() => onNavigate("ai-settings")}>
             <Brain size={18} />
             <span>AI Settings</span>
@@ -87,10 +87,6 @@ export default function Sidebar({ activePage, onNavigate, user }) {
           <button className={activePage === "security" ? "nav-item active" : "nav-item"} onClick={() => onNavigate("security")}>
             <LockKeyhole size={18} />
             <span>Security</span>
-          </button>
-          <button className={activePage === "users" ? "nav-item active" : "nav-item"} onClick={() => onNavigate("users")}>
-            <Users size={18} />
-            <span>User Management</span>
           </button>
           <button className={activePage === "system" ? "nav-item active" : "nav-item"} onClick={() => onNavigate("system")}>
             <ServerCog size={18} />

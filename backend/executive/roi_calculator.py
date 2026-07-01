@@ -7,6 +7,24 @@ DEFAULT_ROI_ASSUMPTIONS = {
 }
 
 
+def format_inr(value: float | int) -> str:
+    amount = int(round(float(value or 0)))
+    sign = "-" if amount < 0 else ""
+    digits = str(abs(amount))
+    if len(digits) <= 3:
+        grouped = digits
+    else:
+        head, tail = digits[:-3], digits[-3:]
+        groups = []
+        while len(head) > 2:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            groups.insert(0, head)
+        grouped = ",".join([*groups, tail])
+    return f"{sign}₹{grouped}"
+
+
 def calculate_roi(metrics: dict, assumptions: dict | None = None) -> dict:
     merged = {**DEFAULT_ROI_ASSUMPTIONS, **(assumptions or {})}
     summary = metrics.get("summary", {})
@@ -27,5 +45,5 @@ def calculate_roi(metrics: dict, assumptions: dict | None = None) -> dict:
         "estimated_drift_cost_avoided": round(drift_cost_avoided, 2),
         "estimated_total_value": round(total_value, 2),
         "assumptions": merged,
-        "roi_summary": f"DriftGuard AI is estimated to save {hours_saved:.1f} hours and generate ${total_value:,.0f} in operational value for this workspace.",
+        "roi_summary": f"DriftGuard AI is estimated to save {hours_saved:.1f} hours and generate {format_inr(total_value)} in operational value for this workspace.",
     }

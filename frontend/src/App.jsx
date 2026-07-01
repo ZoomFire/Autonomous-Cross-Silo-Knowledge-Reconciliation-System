@@ -4,9 +4,6 @@ import ManualAnalysis from "./components/ManualAnalysis.jsx";
 import DatasetEvaluation from "./components/DatasetEvaluation.jsx";
 import DriftHistory from "./components/DriftHistory.jsx";
 import MonitoringDashboard from "./components/MonitoringDashboard.jsx";
-import Login from "./components/Login.jsx";
-import Signup from "./components/Signup.jsx";
-import UserManagement from "./components/UserManagement.jsx";
 import UserProfile from "./components/UserProfile.jsx";
 import WorkspaceSwitcher from "./components/WorkspaceSwitcher.jsx";
 import AuditDashboard from "./pages/AuditDashboard.jsx";
@@ -23,16 +20,20 @@ import ObservabilityDashboard from "./pages/ObservabilityDashboard.jsx";
 import SecurityPrivacyDashboard from "./pages/SecurityPrivacyDashboard.jsx";
 import SystemAdminDashboard from "./pages/SystemAdminDashboard.jsx";
 import ValidationResearchDashboard from "./pages/ValidationResearchDashboard.jsx";
-import { clearAuthToken, getAuthToken, getCurrentUser, getSelectedWorkspaceId, getWorkspaces, logout, setSelectedWorkspaceId } from "./api.js";
+import { getSelectedWorkspaceId, getWorkspaces, setSelectedWorkspaceId } from "./api.js";
+
+const PUBLIC_USER = {
+  user_id: "public-user",
+  name: "Public User",
+  email: "local@driftguard",
+  role: "admin",
+};
 
 export default function App() {
   const [activePage, setActivePage] = useState("manual");
-  const [authMode, setAuthMode] = useState("login");
-  const [user, setUser] = useState(null);
+  const user = PUBLIC_USER;
   const [workspaces, setWorkspaces] = useState([]);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(getSelectedWorkspaceId());
-  const [loading, setLoading] = useState(Boolean(getAuthToken()));
-  const [error, setError] = useState("");
 
   const currentWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.workspace_id === currentWorkspaceId),
@@ -49,20 +50,10 @@ export default function App() {
   }
 
   async function boot() {
-    if (!getAuthToken()) {
-      setLoading(false);
-      return;
-    }
     try {
-      const currentUser = await getCurrentUser();
-      setUser(currentUser);
       await loadWorkspaces();
     } catch {
-      clearAuthToken();
-      setUser(null);
-      setError("Session expired. Please log in again.");
-    } finally {
-      setLoading(false);
+      setWorkspaces([]);
     }
   }
 
@@ -70,42 +61,8 @@ export default function App() {
     boot();
   }, []);
 
-  async function afterLogin(currentUser) {
-    setUser(currentUser);
-    setError("");
-    await loadWorkspaces();
-  }
-
-  async function handleLogout() {
-    try {
-      await logout();
-    } catch {
-      clearAuthToken();
-    }
-    setUser(null);
-    setWorkspaces([]);
-    setCurrentWorkspaceId("");
-    setSelectedWorkspaceId("");
-    setAuthMode("login");
-  }
-
   async function refreshWorkspaceAfterCreate(workspaceId) {
     await loadWorkspaces(workspaceId);
-  }
-
-  if (loading) {
-    return <main className="auth-page"><div className="auth-card"><h1>DriftGuard AI</h1><p>Loading session...</p></div></main>;
-  }
-
-  if (!user) {
-    return authMode === "signup" ? (
-      <Signup onDone={() => setAuthMode("login")} onShowLogin={() => setAuthMode("login")} />
-    ) : (
-      <>
-        {error && <div className="floating-error">{error}</div>}
-        <Login onLogin={afterLogin} onShowSignup={() => setAuthMode("signup")} />
-      </>
-    );
   }
 
   return (
@@ -120,7 +77,7 @@ export default function App() {
             onWorkspaceChange={setCurrentWorkspaceId}
             onWorkspaceCreated={refreshWorkspaceAfterCreate}
           />
-          <UserProfile user={user} workspace={currentWorkspace} onLogout={handleLogout} />
+          <UserProfile user={user} workspace={currentWorkspace} />
         </header>
         {!currentWorkspaceId && (
           <div className="error-banner">No workspace selected. Create or select a workspace before using datasets, evaluations, and monitoring.</div>
@@ -142,7 +99,6 @@ export default function App() {
         {activePage === "audit" && <AuditDashboard user={user} workspaceId={currentWorkspaceId} />}
         {activePage === "observability" && <ObservabilityDashboard user={user} />}
         {activePage === "security" && <SecurityPrivacyDashboard user={user} workspaceId={currentWorkspaceId} />}
-        {activePage === "users" && <UserManagement user={user} />}
         {activePage === "system" && <SystemAdminDashboard user={user} />}
       </main>
     </div>

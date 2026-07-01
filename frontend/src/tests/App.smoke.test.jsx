@@ -4,14 +4,9 @@ import App from "../App.jsx";
 
 vi.mock("../api.js", async () => ({
   ...(await vi.importActual("../api.js")),
-  clearAuthToken: vi.fn(),
-  getAuthToken: () => "",
-  getCurrentUser: vi.fn(),
   getSelectedWorkspaceId: () => "",
   getWorkspaces: vi.fn(),
-  logout: vi.fn(),
   setSelectedWorkspaceId: vi.fn(),
-  login: vi.fn(),
 }));
 
 describe("App smoke", () => {

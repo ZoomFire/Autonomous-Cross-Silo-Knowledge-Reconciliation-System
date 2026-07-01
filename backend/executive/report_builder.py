@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from security_utils import sanitize_metadata
 
 from .metrics_collector import collect_executive_metrics
-from .roi_calculator import calculate_roi
+from .roi_calculator import calculate_roi, format_inr
 
 
 def _summary_text(metrics: dict, roi: dict) -> str:
@@ -12,7 +12,7 @@ def _summary_text(metrics: dict, roi: dict) -> str:
         f"DriftGuard AI analyzed {summary.get('datasets', 0)} datasets and detected "
         f"{summary.get('drift_cases', 0)} drift cases, including {summary.get('critical_drift_cases', 0)} critical issues. "
         f"The system created {summary.get('incidents', 0)} incidents and recorded {summary.get('external_syncs', 0)} external workflow syncs. "
-        f"Estimated value generated is ${roi.get('estimated_total_value', 0):,.0f}."
+        f"Estimated value generated is {format_inr(roi.get('estimated_total_value', 0))}."
     )
 
 

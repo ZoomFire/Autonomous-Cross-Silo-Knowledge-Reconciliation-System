@@ -2112,7 +2112,7 @@ class DemoModeRepository(BaseRepository):
             row.enabled = payload.get("enabled", False)
             row.scenario_name = payload.get("scenario_name", "")
             row.current_step = payload.get("current_step", 0)
-            row.completed_steps_json = _dump(payload.get("completed_steps", []))
+            row.completed_steps_json = json.dumps(payload.get("completed_steps") or [], ensure_ascii=False)
             row.updated_at = now
             db.commit()
             return cls.to_dict(row)
@@ -2689,6 +2689,12 @@ class LLMSettingsRepository(BaseRepository):
         with SessionLocal() as db:
             rows = db.query(LLMSettings).filter(LLMSettings.workspace_id == workspace_id).order_by(LLMSettings.updated_at.desc()).all()
             return [cls.to_dict(row) for row in rows]
+
+    @classmethod
+    def get_by_workspace_provider(cls, workspace_id: str, provider: str) -> dict | None:
+        with SessionLocal() as db:
+            row = db.query(LLMSettings).filter(LLMSettings.workspace_id == workspace_id, LLMSettings.provider == provider).order_by(LLMSettings.updated_at.desc()).first()
+            return cls.to_dict(row) if row else None
 
     @classmethod
     def update(cls, settings_id: str, payload: dict) -> dict | None:

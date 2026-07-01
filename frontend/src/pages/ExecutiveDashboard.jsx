@@ -23,6 +23,14 @@ const defaultAssumptions = {
   automation_time_saved_percentage: 60,
 };
 
+const assumptionLabels = {
+  manual_review_hours_per_case: "Manual review hours per case",
+  average_engineer_hourly_cost: "Average engineer hourly cost (₹)",
+  incident_cost_per_critical: "Critical incident cost (₹)",
+  incident_cost_per_high: "High incident cost (₹)",
+  automation_time_saved_percentage: "Automation time saved",
+};
+
 function Badge({ value }) {
   const key = String(value || "Low").toLowerCase();
   const tone = key === "critical" || key === "high" ? "failed" : key === "medium" ? "warning" : key === "healthy" ? "success" : "neutral";
@@ -31,6 +39,14 @@ function Badge({ value }) {
 
 function Metric({ label, value }) {
   return <div className="metric-card compact"><span>{label}</span><strong>{value ?? 0}</strong></div>;
+}
+
+function formatMoney(value) {
+  return `₹${Number(value || 0).toLocaleString("en-IN")}`;
+}
+
+function formatRoiSummary(value) {
+  return String(value || "").replace(/\$([0-9,.]+)/g, (_, amount) => formatMoney(Number(amount.replace(/,/g, ""))));
 }
 
 function formatDate(value) {
@@ -48,6 +64,7 @@ export default function ExecutiveDashboard({ user, workspaceId }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [action, setAction] = useState("");
 
   const canReport = ["admin", "engineer", "reviewer"].includes(user?.role);
   const canDemo = ["admin", "engineer"].includes(user?.role);
@@ -86,53 +103,111 @@ export default function ExecutiveDashboard({ user, workspaceId }) {
   }, [workspaceId]);
 
   async function runRoi() {
-    const result = await calculateExecutiveROI({ workspace_id: workspaceId, assumptions });
-    setRoi(result);
-    setMessage("ROI calculated.");
+    try {
+      setAction("roi");
+      setError("");
+      const result = await calculateExecutiveROI({ workspace_id: workspaceId, assumptions });
+      setRoi(result);
+      setMessage("ROI calculated.");
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to calculate ROI.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function createReport() {
-    const result = await generateExecutiveReport({ workspace_id: workspaceId, assumptions });
-    setMessage("Executive report generated.");
-    await refresh();
-    setRoi(result.report?.roi || roi);
+    try {
+      setAction("report");
+      setError("");
+      const result = await generateExecutiveReport({ workspace_id: workspaceId, assumptions });
+      setMessage("Executive report generated.");
+      await refresh();
+      setRoi(result.report?.roi || roi);
+    } catch (err) {
+      setError(err.message || "Unable to generate executive report.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function enableDemo() {
-    const state = await enableDemoMode({ workspace_id: workspaceId, scenario_name: selectedScenario });
-    setDemoState(state);
-    setMessage("Demo mode enabled.");
+    try {
+      setAction("demo");
+      setError("");
+      const state = await enableDemoMode({ workspace_id: workspaceId, scenario_name: selectedScenario });
+      setDemoState(state);
+      setMessage("Demo mode enabled.");
+    } catch (err) {
+      setError(err.message || "Unable to enable demo mode.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function disableDemo() {
-    const state = await disableDemoMode({ workspace_id: workspaceId });
-    setDemoState(state);
-    setMessage("Demo mode disabled.");
+    try {
+      setAction("demo");
+      setError("");
+      const state = await disableDemoMode({ workspace_id: workspaceId });
+      setDemoState(state);
+      setMessage("Demo mode disabled.");
+    } catch (err) {
+      setError(err.message || "Unable to disable demo mode.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function advanceStep() {
-    const state = await advanceDemoStep(workspaceId);
-    setDemoState(state);
-    setMessage("Demo step advanced.");
+    try {
+      setAction("demo");
+      setError("");
+      const state = await advanceDemoStep(workspaceId);
+      setDemoState(state);
+      setMessage("Demo step advanced.");
+    } catch (err) {
+      setError(err.message || "Unable to advance demo step.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function seedDemo() {
-    await seedExecutiveDemoData(workspaceId);
-    setMessage("Executive demo data seeded.");
-    await refresh();
+    try {
+      setAction("seed");
+      setError("");
+      await seedExecutiveDemoData(workspaceId);
+      setMessage("Executive demo data seeded.");
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to seed executive demo data.");
+    } finally {
+      setAction("");
+    }
   }
 
   async function resetDemo() {
     if (!confirm("Reset demo state? User accounts and normal workspace data will not be deleted.")) return;
-    const state = await resetDemoData(workspaceId);
-    setDemoState(state);
-    setMessage("Demo state reset.");
-    await refresh();
+    try {
+      setAction("demo");
+      setError("");
+      const state = await resetDemoData(workspaceId);
+      setDemoState(state);
+      setMessage("Demo state reset.");
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to reset demo data.");
+    } finally {
+      setAction("");
+    }
   }
 
   const summary = metrics?.summary || {};
   const risk = metrics?.risk || {};
   const operations = metrics?.operations || {};
+  const completedSteps = Array.isArray(demoState?.completed_steps) ? demoState.completed_steps : [];
 
   return (
     <section className="page executive-page">
@@ -186,25 +261,25 @@ export default function ExecutiveDashboard({ user, workspaceId }) {
         </div>
       </div>
 
-      <div className="incident-layout">
-        <div className="panel incident-form">
+      <div className="executive-roi-grid">
+        <div className="panel executive-assumptions">
           <div className="section-heading"><h3><Calculator size={18} /> ROI Calculator</h3></div>
           {Object.keys(defaultAssumptions).map((key) => (
-            <label key={key}>{key}<input type="number" value={assumptions[key]} onChange={(event) => setAssumptions({ ...assumptions, [key]: Number(event.target.value) })} /></label>
+            <label key={key}>{assumptionLabels[key]}<input type="number" value={assumptions[key]} onChange={(event) => setAssumptions({ ...assumptions, [key]: Number(event.target.value) })} /></label>
           ))}
-          <button className="primary-button" onClick={runRoi} type="button"><Calculator size={16} />Calculate ROI</button>
+          <button className="primary-button" onClick={runRoi} type="button" disabled={action === "roi"}><Calculator size={16} />Calculate ROI</button>
         </div>
         <div className="panel">
           <div className="section-heading"><h3>ROI Estimate</h3></div>
-          <div className="report-grid">
+          <div className="report-grid executive-report-grid">
             <div><span>Manual hours</span><strong>{roi?.estimated_manual_hours || 0}</strong></div>
             <div><span>Automated hours</span><strong>{roi?.estimated_automated_hours || 0}</strong></div>
             <div><span>Hours saved</span><strong>{roi?.estimated_hours_saved || 0}</strong></div>
-            <div><span>Cost saved</span><strong>${roi?.estimated_cost_saved || 0}</strong></div>
-            <div><span>Drift cost avoided</span><strong>${roi?.estimated_drift_cost_avoided || 0}</strong></div>
-            <div><span>Total value</span><strong>${roi?.estimated_total_value || 0}</strong></div>
+            <div><span>Cost saved</span><strong>{formatMoney(roi?.estimated_cost_saved)}</strong></div>
+            <div><span>Drift cost avoided</span><strong>{formatMoney(roi?.estimated_drift_cost_avoided)}</strong></div>
+            <div><span>Total value</span><strong>{formatMoney(roi?.estimated_total_value)}</strong></div>
           </div>
-          {roi?.roi_summary && <p className="report-summary">{roi.roi_summary}</p>}
+          {roi?.roi_summary && <p className="report-summary">{formatRoiSummary(roi.roi_summary)}</p>}
         </div>
       </div>
 
@@ -223,11 +298,11 @@ export default function ExecutiveDashboard({ user, workspaceId }) {
         </div>
       </div>
 
-      <div className="incident-layout">
-        <div className="panel">
+      <div className="executive-bottom-grid">
+        <div className="panel executive-reports-panel">
           <div className="section-heading">
             <h3><FileText size={18} /> Executive Reports</h3>
-            {canReport && <button className="primary-button" onClick={createReport} type="button"><FileText size={16} />Generate Executive Report</button>}
+            {canReport && <button className="primary-button" onClick={createReport} type="button" disabled={action === "report"}><FileText size={16} />Generate Executive Report</button>}
           </div>
           {reports.map((report) => (
             <div className="agent-log-row" key={report.report_id}>
@@ -239,30 +314,32 @@ export default function ExecutiveDashboard({ user, workspaceId }) {
           {reports.length === 0 && <p className="empty-state">No executive reports generated yet.</p>}
         </div>
 
-        <div className="panel">
+        <div className="panel executive-demo-panel">
           <div className="section-heading"><h3><Sparkles size={18} /> Demo Mode</h3></div>
           <label className="incident-form">Scenario<select value={selectedScenario} onChange={(event) => setSelectedScenario(event.target.value)}>
             {scenarios.map((scenario) => <option key={scenario.name} value={scenario.name}>{scenario.name}</option>)}
           </select></label>
           <p className="report-summary">Current step: {demoState?.current_step || 0}</p>
-          <div className="button-row">
-            {canDemo && <button className="secondary-button" onClick={enableDemo} type="button"><Play size={16} />Enable Demo Mode</button>}
-            {canDemo && <button className="secondary-button" onClick={advanceStep} type="button">Advance Step</button>}
-            {canDemo && <button className="secondary-button" onClick={seedDemo} type="button">Seed Executive Demo Data</button>}
-            {canDemo && <button className="secondary-button" onClick={disableDemo} type="button">Disable Demo Mode</button>}
-            {canReset && <button className="secondary-button danger" onClick={resetDemo} type="button"><RotateCcw size={16} />Reset Demo Data</button>}
+          <div className="executive-action-grid">
+            {canDemo && <button className="secondary-button" onClick={enableDemo} type="button" disabled={action === "demo"}><Play size={16} />Enable Demo</button>}
+            {canDemo && <button className="secondary-button" onClick={advanceStep} type="button" disabled={action === "demo"}>Advance Step</button>}
+            {canDemo && <button className="secondary-button" onClick={seedDemo} type="button" disabled={action === "seed"}>Seed Demo Data</button>}
+            {canDemo && <button className="secondary-button" onClick={disableDemo} type="button" disabled={action === "demo"}>Disable Demo</button>}
+            {canReset && <button className="secondary-button danger" onClick={resetDemo} type="button" disabled={action === "demo"}><RotateCcw size={16} />Reset</button>}
           </div>
         </div>
       </div>
 
-      <div className="panel">
+      <div className="panel executive-walkthrough">
         <div className="section-heading"><h3>Guided Walkthrough</h3></div>
-        {(activeScenario?.steps || []).map((step, index) => (
-          <div className="agent-log-row" key={step}>
-            <span>{demoState?.completed_steps?.includes(step) ? "Done" : index === (demoState?.current_step || 0) ? "Current" : "Pending"}</span>
+        <div className="walkthrough-grid">
+          {(activeScenario?.steps || []).map((step, index) => (
+          <div className="walkthrough-step" key={step}>
+            <span className={completedSteps.includes(step) ? "success" : index === (demoState?.current_step || 0) ? "info-badge" : "neutral"}>{completedSteps.includes(step) ? "Done" : index === (demoState?.current_step || 0) ? "Current" : "Pending"}</span>
             <p>{step}</p>
           </div>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
   );

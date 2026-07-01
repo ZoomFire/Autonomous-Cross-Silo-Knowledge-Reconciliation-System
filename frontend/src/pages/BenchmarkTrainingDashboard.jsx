@@ -32,7 +32,14 @@ function Distribution({ title, data = {} }) {
   return (
     <div className="metric-card compact">
       <span>{title}</span>
-      {entries.length ? entries.map(([key, value]) => <p key={key}><strong>{key}</strong>: {value}</p>) : <p>No data yet.</p>}
+      <div className="distribution-list">
+        {entries.length ? entries.map(([key, value]) => (
+          <p key={key}>
+            <strong title={key}>{key}</strong>
+            <span>{value}</span>
+          </p>
+        )) : <p>No data yet.</p>}
+      </div>
     </div>
   );
 }
@@ -139,18 +146,29 @@ export default function BenchmarkTrainingDashboard({ user, workspaceId }) {
   }
 
   async function splitBenchmark(benchmarkId) {
-    const result = await createBenchmarkSplit(benchmarkId, { train_ratio: 0.8, validation_ratio: 0.1, test_ratio: 0.1, seed: 42 });
-    setMessage(`Split created: train ${result.split_counts.train}, validation ${result.split_counts.validation}, test ${result.split_counts.test}.`);
-    await loadBenchmarkDetail(benchmarkId);
+    try {
+      setError("");
+      const result = await createBenchmarkSplit(benchmarkId, { train_ratio: 0.8, validation_ratio: 0.1, test_ratio: 0.1, seed: 42 });
+      setMessage(`Split created: train ${result.split_counts.train}, validation ${result.split_counts.validation}, test ${result.split_counts.test}.`);
+      await loadBenchmarkDetail(benchmarkId);
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Unable to create split.");
+    }
   }
 
   async function convertBenchmark(benchmark) {
-    const result = await createDriftGuardDatasetFromBenchmark(benchmark.benchmark_id, {
-      dataset_name: `${benchmark.name} Converted Dataset`,
-      description: `Converted ${benchmark.dataset_type} benchmark examples for DriftGuard evaluation.`,
-      version: "1.0",
-    });
-    setMessage(`Created DriftGuard dataset: ${result.name}.`);
+    try {
+      setError("");
+      const result = await createDriftGuardDatasetFromBenchmark(benchmark.benchmark_id, {
+        dataset_name: `${benchmark.name} Converted Dataset`,
+        description: `Converted ${benchmark.dataset_type} benchmark examples for DriftGuard evaluation.`,
+        version: "1.0",
+      });
+      setMessage(`Created DriftGuard dataset: ${result.name}.`);
+    } catch (err) {
+      setError(err.message || "Unable to convert benchmark.");
+    }
   }
 
   async function removeBenchmark(benchmarkId) {
@@ -162,26 +180,46 @@ export default function BenchmarkTrainingDashboard({ user, workspaceId }) {
   }
 
   async function previewMerge() {
-    const result = await mergeTrainingData({
-      workspace_id: workspaceId,
-      benchmark_ids: selectedIds,
-      include_human_corrected: mergeOptions.include_human_corrected,
-      max_examples: Number(mergeOptions.max_examples || 1000),
-    });
-    setMergeSummary(result.summary);
-    setMessage("Merged training data preview ready.");
+    if (!selectedIds.length) {
+      setError("Import or select at least one benchmark dataset before previewing training data.");
+      return;
+    }
+    try {
+      setError("");
+      setMessage("");
+      const result = await mergeTrainingData({
+        workspace_id: workspaceId,
+        benchmark_ids: selectedIds,
+        include_human_corrected: mergeOptions.include_human_corrected,
+        max_examples: Number(mergeOptions.max_examples || 1000),
+      });
+      setMergeSummary(result.summary);
+      setMessage("Merged training data preview ready.");
+    } catch (err) {
+      setError(err.message || "Unable to preview merged training data.");
+    }
   }
 
   async function submitExport() {
-    const result = await exportTrainingDataset({
-      ...exportForm,
-      workspace_id: workspaceId,
-      benchmark_ids: selectedIds,
-      include_human_corrected: mergeOptions.include_human_corrected,
-      max_examples: Number(mergeOptions.max_examples || 1000),
-    });
-    setMessage(`Export created: ${result.export.name}.`);
-    setExports(await getTrainingExports(workspaceId));
+    if (!selectedIds.length) {
+      setError("Import or select at least one benchmark dataset before exporting training data.");
+      return;
+    }
+    try {
+      setError("");
+      setMessage("");
+      const result = await exportTrainingDataset({
+        ...exportForm,
+        workspace_id: workspaceId,
+        benchmark_ids: selectedIds,
+        include_human_corrected: mergeOptions.include_human_corrected,
+        max_examples: Number(mergeOptions.max_examples || 1000),
+      });
+      setMessage(`Export created: ${result.export.name}.`);
+      setExports(await getTrainingExports(workspaceId));
+    } catch (err) {
+      setError(err.message || "Unable to export training dataset.");
+    }
   }
 
   return (
@@ -282,7 +320,7 @@ export default function BenchmarkTrainingDashboard({ user, workspaceId }) {
       {quality && (
         <section className="panel">
           <div className="section-heading"><h3>Quality Dashboard</h3></div>
-          <div className="evaluation-grid">
+          <div className="evaluation-grid benchmark-quality-grid">
             <div className="metric-card compact"><span>Total examples</span><strong>{quality.total_examples}</strong></div>
             <div className="metric-card compact"><span>Average quality score</span><strong>{quality.average_quality_score}</strong></div>
             <Distribution title="Labels" data={quality.label_distribution} />
@@ -309,7 +347,7 @@ export default function BenchmarkTrainingDashboard({ user, workspaceId }) {
           <button className="primary-button" onClick={submitExport} disabled={!canManage}><Download size={16} />Export Training Dataset</button>
         </div>
         {mergeSummary && (
-          <div className="evaluation-grid">
+          <div className="evaluation-grid benchmark-quality-grid">
             <div className="metric-card compact"><span>Merged examples</span><strong>{mergeSummary.total_examples}</strong></div>
             <Distribution title="Dataset types" data={mergeSummary.dataset_type_distribution} />
             <Distribution title="Labels" data={mergeSummary.label_distribution} />

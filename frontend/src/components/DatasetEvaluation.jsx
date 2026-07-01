@@ -476,7 +476,7 @@ export default function DatasetEvaluation({ user, workspaceId }) {
 
   async function previewUploadedDataset() {
     if (!selectedFile) {
-      setError("Please select a JSON dataset file first.");
+      setError("Please select a JSON or SNLI JSONL dataset file first.");
       return;
     }
     setPreviewingUpload(true);
@@ -494,7 +494,7 @@ export default function DatasetEvaluation({ user, workspaceId }) {
 
   async function evaluateUploadedDataset() {
     if (!selectedFile) {
-      setError("Please select a JSON dataset file first.");
+      setError("Please select a JSON or SNLI JSONL dataset file first.");
       return;
     }
     if (!workspaceId) {
@@ -517,7 +517,7 @@ export default function DatasetEvaluation({ user, workspaceId }) {
 
   async function saveDataset() {
     if (!selectedFile) {
-      setError("Please select a JSON dataset file first.");
+      setError("Please select a JSON or SNLI JSONL dataset file first.");
       return;
     }
     if (!workspaceId) {
@@ -807,12 +807,12 @@ export default function DatasetEvaluation({ user, workspaceId }) {
         <section className="panel control-panel upload-panel">
           <div>
             <h3>Upload Real Dataset</h3>
-            <p>Upload a JSON dataset file with real benchmark cases and evaluate DriftGuard AI on it.</p>
+            <p>Upload a JSON or SNLI JSONL dataset file with real benchmark cases and evaluate DriftGuard AI on it.</p>
           </div>
           <label className="file-upload">
             <FileJson size={19} />
-            <span>{selectedFile ? selectedFile.name : "Choose JSON dataset file"}</span>
-            <input type="file" accept=".json,application/json" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} />
+            <span>{selectedFile ? selectedFile.name : "Choose JSON or JSONL dataset file"}</span>
+            <input type="file" accept=".json,.jsonl,application/json,application/jsonl" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} />
           </label>
           <div className="control-actions">
             <button className="secondary-button" onClick={downloadTemplate}><Download size={17} />Download Dataset Template</button>
@@ -844,7 +844,7 @@ export default function DatasetEvaluation({ user, workspaceId }) {
       <section className="panel control-panel">
         <div>
           <h3>Save Uploaded Dataset</h3>
-          <p>Store the selected JSON dataset locally for repeatable benchmark runs.</p>
+          <p>Store the selected JSON or SNLI JSONL dataset locally for repeatable benchmark runs.</p>
         </div>
         <div className="save-grid">
           <label>Dataset Name<input value={datasetName} onChange={(event) => setDatasetName(event.target.value)} placeholder="My Benchmark Dataset" /></label>

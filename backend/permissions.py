@@ -1,7 +1,6 @@
-from fastapi import Header, HTTPException
+from fastapi import HTTPException
 
 from audit_store import log_audit_event
-from auth_store import get_current_user
 from workspace_store import get_member_role, get_workspace, is_workspace_member
 
 
@@ -93,32 +92,24 @@ ROLE_PERMISSIONS = {
     "viewer": {"view_dashboard", "view_connectors", "view_benchmarks", "view_ml_models", "view_incidents", "view_integrations", "view_executive", "view_validation"},
 }
 
+PUBLIC_USER = {
+    "user_id": "public-user",
+    "name": "Public User",
+    "email": "local@driftguard",
+    "role": "admin",
+}
+
 
 def has_permission(user: dict, permission: str) -> bool:
     return permission in ROLE_PERMISSIONS.get(user.get("role", ""), set())
 
 
-def _token_from_header(authorization: str | None) -> str:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Missing authentication token.")
-    return authorization.split(" ", 1)[1].strip()
-
-
-def require_auth(authorization: str | None = Header(default=None)) -> dict:
-    user = get_current_user(_token_from_header(authorization))
-    if not user:
-        log_audit_event(
-            action="invalid_token",
-            status="denied",
-            severity="Critical",
-            message="Request used a missing, invalid, or expired session token.",
-        )
-        raise HTTPException(status_code=401, detail="Session expired or invalid. Please log in again.")
-    return user
+def require_auth() -> dict:
+    return PUBLIC_USER.copy()
 
 
 def require_permission(permission: str):
-    def dependency(user: dict = Header(default=None)):
+    def dependency(user: dict | None = None):
         return user
 
     return dependency
