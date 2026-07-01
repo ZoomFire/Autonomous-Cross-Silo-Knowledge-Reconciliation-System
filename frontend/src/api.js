@@ -1,4 +1,4 @@
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001").replace(/\/$/, "");
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
 
 const WORKSPACE_KEY = "driftguard_workspace_id";
 
@@ -39,6 +39,18 @@ function networkErrorMessage(error) {
   return error?.message || "Request failed.";
 }
 
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
+function logNetworkError(url, error) {
+  console.error("[DriftGuard API] Backend request failed", {
+    url,
+    apiBaseUrl: API_BASE_URL || "(same-origin)",
+    message: error?.message || String(error),
+  });
+}
+
 async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;
   const headers = {
@@ -46,8 +58,9 @@ async function request(path, options = {}) {
     ...(options.headers || {}),
   };
   const fetchOptions = { ...options };
+  const url = apiUrl(path);
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(url, {
       ...fetchOptions,
       headers,
     });
@@ -62,6 +75,7 @@ async function request(path, options = {}) {
     throw error;
   } catch (err) {
     if (err instanceof TypeError) {
+      logNetworkError(url, err);
       throw new Error(networkErrorMessage(err));
     }
     throw err;
@@ -181,8 +195,9 @@ export function deleteFeedback(feedbackId) {
 }
 
 async function downloadReport(path, filename) {
+  const url = apiUrl(path);
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(url, {
     });
     if (response.ok) {
       const blob = await response.blob();
@@ -199,6 +214,7 @@ async function downloadReport(path, filename) {
     throw new Error(message);
   } catch (err) {
     if (err instanceof TypeError) {
+      logNetworkError(url, err);
       throw new Error(networkErrorMessage(err));
     }
     throw err;

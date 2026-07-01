@@ -7,7 +7,7 @@ afterEach(() => {
 
 describe("API base URL configuration", () => {
   test("uses VITE_API_BASE_URL when provided", async () => {
-    vi.stubEnv("VITE_API_BASE_URL", "https://backend.example.com");
+    vi.stubEnv("VITE_API_BASE_URL", "https://backend.example.com/");
     vi.resetModules();
 
     const { API_BASE_URL } = await import("../api.js");
@@ -15,13 +15,13 @@ describe("API base URL configuration", () => {
     expect(API_BASE_URL).toBe("https://backend.example.com");
   });
 
-  test("falls back to the local backend URL", async () => {
+  test("falls back to same-origin paths when VITE_API_BASE_URL is not provided", async () => {
     vi.stubEnv("VITE_API_BASE_URL", "");
     vi.resetModules();
 
     const { API_BASE_URL } = await import("../api.js");
 
-    expect(API_BASE_URL).toBe("http://127.0.0.1:8001");
+    expect(API_BASE_URL).toBe("");
   });
 
   test("does not attach authorization headers to feature API calls", async () => {
@@ -38,5 +38,36 @@ describe("API base URL configuration", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
+  });
+
+  test("health check calls the backend /health endpoint", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://backend.example.com");
+    vi.resetModules();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ status: "healthy" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { getHealth } = await import("../api.js");
+    await getHealth();
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://backend.example.com/health");
+  });
+
+  test("logs the final API URL when a request cannot reach the backend", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://backend.example.com");
+    vi.resetModules();
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { getHealth } = await import("../api.js");
+
+    await expect(getHealth()).rejects.toThrow("Backend unavailable");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[DriftGuard API] Backend request failed",
+      expect.objectContaining({ url: "https://backend.example.com/health" }),
+    );
   });
 });
