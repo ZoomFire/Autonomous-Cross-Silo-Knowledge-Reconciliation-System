@@ -63,13 +63,15 @@ APP_PORT = _int("APP_PORT", 8001)
 USE_DATABASE = _bool("USE_DATABASE", True)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./storage/driftguard.db")
 STORAGE_DIR = BASE_DIR / "storage"
-FRONTEND_URL = os.getenv("FRONTEND_URL", "").strip()
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").strip()
 CORS_ORIGINS = _unique([
     "http://localhost:5173",
-    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "https://autonomous-cross-silo-knowledge-rec.vercel.app",
     FRONTEND_URL,
     *_list("CORS_ORIGINS", []),
 ])
+CORS_ALLOW_ALL = _bool("CORS_ALLOW_ALL", False)
 SESSION_EXPIRE_HOURS = _int("SESSION_EXPIRE_HOURS", 24)
 MAX_UPLOAD_SIZE_MB = _int("MAX_UPLOAD_SIZE_MB", 25)
 ENABLE_OPTIONAL_LLM = _bool("ENABLE_OPTIONAL_LLM", False)

@@ -1,127 +1,81 @@
-# DriftGuard AI Deployment Guide
+# Autonomous Cross-Silo Knowledge Reconciliation Deployment
 
-## Overview
+This project deploys as two services:
 
-DriftGuard AI can run locally with Python and Vite, or as two Docker services with persistent SQLite storage. Docker Compose is the recommended production-style MVP deployment path.
+- Frontend: React + Vite on Vercel
+- Backend: FastAPI on Render
 
-## Prerequisites
+Do not commit real `.env` files or production secrets. Use the provider dashboards for environment variables.
 
-- Docker Desktop or Docker Engine with Compose
-- Node.js 20 for local frontend development
-- Python 3.11 for local backend development
+## Backend: Render
 
-## Environment Setup
+Create a new Render Web Service from the GitHub repository.
 
-Copy the example environment files:
+- Root Directory: `backend`
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
-```bash
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-cp .env.example .env
-```
-
-SQLite is the default database:
+Environment variables:
 
 ```text
-DATABASE_URL=sqlite:///./storage/driftguard.db
+FRONTEND_URL=https://your-vercel-frontend-url.vercel.app
+XAI_API_KEY=
+DATABASE_URL=your_database_url_if_used
 ```
 
-## Local Development
+Set `XAI_API_KEY` only if the optional Grok/xAI provider is used. Set `DATABASE_URL` only if using an external database; otherwise the backend defaults to SQLite storage.
+The backend also allows `https://*.vercel.app` origins by default for Vercel deployments and previews. For temporary CORS debugging only, set `CORS_ALLOW_ALL=true` on Render and remove it after confirming the frontend URL.
 
-Backend:
+For Render PostgreSQL, use a database URL that the backend service can resolve:
 
-```bash
-cd backend
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8001
-```
+- Use the Internal Database URL only when the Render web service and database are in the same region/private network.
+- Use the External Database URL if the backend logs show `could not translate host name "dpg-...-a" to address`.
+- Remove `DATABASE_URL` entirely if you want to use the app's default SQLite storage instead of PostgreSQL.
 
-Frontend:
+Health checks:
 
-```bash
-cd frontend
-npm run dev
-```
+- `GET /` returns `{"message":"Silo Backend is running"}`
+- `GET /health` returns `{"status":"ok"}`
+- `GET /docs` opens the FastAPI Swagger UI
 
-## Docker Deployment
+## Frontend: Vercel
 
-Build and run:
+Create a new Vercel project from the same GitHub repository.
 
-```bash
-docker compose up --build
-```
+- Root Directory: `frontend`
+- Framework: Vite
+- Build Command: `npm run build`
+- Output Directory: `dist`
 
-Stop:
-
-```bash
-docker compose down
-```
-
-Open:
-
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8001
-- Health: http://localhost:8001/health
-- Readiness: http://localhost:8001/system/ready
-
-## Persistent Storage
-
-Docker Compose mounts a named volume:
+Environment variable:
 
 ```text
-driftguard_storage:/app/storage
+VITE_API_BASE_URL=https://your-render-backend-url.onrender.com
 ```
 
-This keeps SQLite and local storage across container restarts.
+The frontend API client reads `import.meta.env.VITE_API_BASE_URL`, so do not hardcode backend URLs in React code.
 
-## Database Backup
+## Deployment Order
 
-Use the System Admin dashboard backup option, or call:
-
-```text
-GET /system/database/backup
-```
-
-Store backups outside the Docker volume.
-
-## Common Errors
-
-- Missing `backend/.env`: copy from `backend/.env.example`.
-- Port already in use: change `BACKEND_PORT` or `FRONTEND_PORT` in root `.env`.
-- Frontend cannot reach backend: check `VITE_API_BASE_URL` and backend CORS origins.
-- Render PostgreSQL DNS error such as `could not translate host name "dpg-...-a"`: update `DATABASE_URL` to a Render database URL that the web service can resolve. Use the Internal Database URL only when the backend service and database are in the same Render region/private network; otherwise use the External Database URL.
-- Database permission errors: inspect the Docker volume and container user permissions.
+1. Push latest code to GitHub.
+2. Deploy backend on Render.
+3. Test backend `/`, `/health`, and `/docs`.
+4. Copy Render backend URL.
+5. Add backend URL in Vercel as `VITE_API_BASE_URL`.
+6. Deploy frontend on Vercel.
+7. Copy Vercel frontend URL.
+8. Add frontend URL in Render as `FRONTEND_URL`.
+9. Redeploy backend.
+10. Test full project from frontend.
 
 ## Troubleshooting
 
-Check backend logs:
-
-```bash
-docker logs driftguard-backend
-```
-
-Check frontend logs:
-
-```bash
-docker logs driftguard-frontend
-```
-
-Check readiness:
-
-```bash
-curl http://localhost:8001/system/ready
-```
-
-## Security Notes
-
-- Do not commit `.env` files.
-- Do not commit optional LLM API keys.
-- Use HTTPS and a reverse proxy in production.
-- Use a managed secrets store for production secrets.
-
-## Production Recommendations
-
-- Use PostgreSQL for multi-user production deployments.
-- Put Nginx, Caddy, or a cloud load balancer in front of the app.
-- Enable HTTPS.
-- Configure log collection and backups.
-- Rotate secrets and session settings regularly.
+- CORS error: confirm Render has `FRONTEND_URL` set to the exact Vercel origin, including `https://` and no trailing path. Redeploy backend after changing it.
+- 404 error: confirm the frontend calls the intended backend path and the Render service root directory is `backend`.
+- 500 error: inspect Render logs, verify required environment variables, and check database/storage access.
+- Render PostgreSQL DNS error: if logs show `could not translate host name "dpg-...-a" to address`, the backend cannot resolve the database host in `DATABASE_URL`. Replace `DATABASE_URL` with the Render database External Database URL, move the database and web service into the same Render region/private network, or remove `DATABASE_URL` to use SQLite.
+- Frontend not calling backend: verify Vercel has `VITE_API_BASE_URL` set to the Render URL and redeploy the frontend.
+- Render service sleeping: free Render services can sleep after inactivity; the first request may be slow while it wakes.
+- Missing environment variables: compare Render values with `backend/.env.example` and Vercel values with `frontend/.env.example`.
+- Wrong root directory: Render must use `backend`; Vercel must use `frontend`.
+- Wrong start command: Render must use `uvicorn main:app --host 0.0.0.0 --port $PORT`.

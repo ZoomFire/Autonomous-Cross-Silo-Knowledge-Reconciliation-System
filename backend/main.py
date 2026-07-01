@@ -29,8 +29,10 @@ from config import (
     AGENT_RATE_LIMIT_PER_HOUR,
     APP_ENV,
     APP_NAME,
+    CORS_ALLOW_ALL,
     CORS_ORIGINS,
     DATABASE_URL,
+    FRONTEND_URL,
     INCIDENT_AUTO_CREATE_ENABLED,
     INCIDENT_AUTO_CREATE_SEVERITIES,
     MAX_UPLOAD_SIZE_MB,
@@ -221,6 +223,14 @@ from workspace_store import (
 
 
 app = FastAPI(title="DriftGuard AI Level 4.7 Backend")
+allowed_origins = CORS_ORIGINS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if CORS_ALLOW_ALL else allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 LATEST_EVALUATION_RESULT: DatasetEvaluationResponse | None = None
 
 INVALID_DATASET_MESSAGE = (
@@ -241,14 +251,6 @@ async def _read_upload_limited(file: UploadFile) -> bytes:
     if len(content) > max_bytes:
         raise HTTPException(status_code=413, detail="Uploaded file exceeds maximum allowed size.")
     return content
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 @app.middleware("http")
@@ -344,26 +346,21 @@ def on_startup():
     logger.info("Startup complete for %s in %s mode. database=%s storage=%s", APP_NAME, APP_ENV, USE_DATABASE, STORAGE_DIR)
 
 
-def _health_message() -> dict:
-    return {"status": "ok", "message": "Silo Project Backend is running"}
-
-
 @app.get("/")
 def root():
-    return _health_message()
+    return {"message": "Silo Backend is running"}
 
 
 @app.get("/health")
 def health():
-    storage_available = STORAGE_DIR.exists() and STORAGE_DIR.is_dir()
+    return {"status": "ok"}
+
+
+@app.get("/cors-debug")
+def cors_debug():
     return {
-        **_health_message(),
-        "app_name": APP_NAME,
-        "service": "DriftGuard AI Level 4.7 Backend",
-        "environment": APP_ENV,
-        "database_enabled": USE_DATABASE,
-        "storage_available": storage_available,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "frontend_url": FRONTEND_URL,
+        "allowed_origins": allowed_origins,
     }
 
 

@@ -1,4 +1,5 @@
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/$/, "");
+export { API_BASE_URL, apiUrl } from "./config/api.js";
+import { API_BASE_URL, apiUrl } from "./config/api.js";
 
 const WORKSPACE_KEY = "driftguard_workspace_id";
 
@@ -37,10 +38,6 @@ function networkErrorMessage(error) {
     return "Backend unavailable. Please check that the server is running.";
   }
   return error?.message || "Request failed.";
-}
-
-function apiUrl(path) {
-  return `${API_BASE_URL}${path}`;
 }
 
 function logNetworkError(url, error) {
@@ -94,7 +91,12 @@ export function getReports() {
 }
 
 export function getHealth() {
-  return request("/health");
+  return request("/health").then((body) => {
+    if (body?.status !== "ok") {
+      throw new Error("Backend health check failed.");
+    }
+    return body;
+  });
 }
 
 export function getSampleDataset() {
