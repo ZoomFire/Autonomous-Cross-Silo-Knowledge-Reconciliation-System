@@ -9,14 +9,14 @@ def test_agent_plan_works(client, admin_headers, workspace):
     assert response.json()["plan"]
 
 
-def test_agent_run_endpoint_is_permission_protected(client, viewer_headers, workspace):
+def test_agent_run_endpoint_reaches_runtime_validation_without_login(client, workspace):
     response = client.post(
         "/agent/run",
         json={"workspace_id": workspace["workspace_id"], "goal": "Run restricted workflow"},
-        headers=viewer_headers,
     )
 
-    assert response.status_code in {403, 404}
+    assert response.status_code == 400
+    assert "No imported sources found" in response.json()["message"]
 
 
 def test_agent_history_endpoint_works(client, admin_headers, workspace):

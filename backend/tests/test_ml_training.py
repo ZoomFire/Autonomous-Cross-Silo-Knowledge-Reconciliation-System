@@ -10,20 +10,21 @@ def _headers_for_role(role: str) -> dict:
     return {"Authorization": f"Bearer {session['token']}"}
 
 
-def test_training_endpoint_requires_engineer_or_admin(client, viewer_headers, workspace):
+def test_training_endpoint_reaches_runtime_validation_without_login(client, workspace):
     response = client.post(
         "/ml/experiments/train",
         json={"workspace_id": workspace["workspace_id"], "task_type": "label_classification", "model_type": "logistic_regression"},
-        headers=viewer_headers,
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 400
+    assert "No training examples found" in response.json()["message"]
 
 
-def test_leaderboard_requires_auth(client, workspace):
+def test_leaderboard_works_without_login(client, workspace):
     response = client.get(f"/ml/leaderboard?workspace_id={workspace['workspace_id']}")
 
-    assert response.status_code == 401
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
 
 
 def test_predict_returns_fallback_when_no_model_deployed(client, admin_headers, workspace):

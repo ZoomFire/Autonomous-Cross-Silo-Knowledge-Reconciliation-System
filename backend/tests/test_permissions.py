@@ -1,22 +1,22 @@
-def test_viewer_cannot_run_restricted_action(client, viewer_headers):
+def test_workspace_creation_works_with_stale_viewer_header(client, viewer_headers):
     response = client.post(
         "/workspaces",
-        json={"name": "Viewer Workspace", "description": "Should not be created."},
+        json={"name": "Public Workspace", "description": "Created by public admin mode."},
         headers=viewer_headers,
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.json()["name"] == "Public Workspace"
 
 
-def test_admin_can_access_admin_endpoint(client, admin_headers):
+def test_auth_user_management_endpoint_is_disabled(client, admin_headers):
     response = client.get("/auth/users", headers=admin_headers)
 
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    assert response.status_code == 410
 
 
-def test_permission_denied_returns_error_response(client, viewer_headers):
+def test_disabled_auth_endpoint_returns_error_response(client, viewer_headers):
     response = client.get("/auth/users", headers=viewer_headers)
 
-    assert response.status_code == 403
+    assert response.status_code == 410
     assert response.json().get("error") is True
